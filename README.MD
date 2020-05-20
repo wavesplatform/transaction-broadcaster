@@ -1,6 +1,8 @@
 ## API
 ### GET /sequences/:id
-Response:
+#### Responses: ####
+
+*200 OK*
 ```
 {
     "id": <number>,
@@ -12,17 +14,38 @@ Response:
 }
 ```
 
+*404 Not Found*
+```
+{
+    "message": "Sequence not found"
+}
+```
+
 ### POST /sequences
-*Request:*
+#### Request: ####
 ```
 {
     "txs": [<array of strings>]
 }
 ```
-*Response:*
+
+#### Responses: ####
+*200 OK*
 ```
 {
     "id": <number>  // sequence id
+}
+```
+*400 Bad Request*
+```
+{
+    "errors": [
+        {
+            "code": <number>,
+            "message": <string>,
+            "details: {}
+        }
+    ]
 }
 ```
 
