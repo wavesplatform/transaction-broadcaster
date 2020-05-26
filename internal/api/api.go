@@ -1,9 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/waves-exchange/broadcaster/internal/waves"
@@ -19,6 +22,10 @@ var errInternalServerError = errors.New("Internal Server Error")
 
 type txsRequest struct {
 	Txs []string `json:"txs" binding:"required"`
+}
+
+type txDto struct {
+	id string
 }
 
 func accessLog(logger *zap.Logger) func(*gin.Context) {
@@ -56,7 +63,7 @@ func createErrorRenderer(logger *zap.Logger) func(*gin.Context, int, Error) {
 }
 
 // Create ...
-func Create(service sequence.Service, nodeInteractor waves.NodeInteractor) *gin.Engine {
+func Create(service sequence.Service, nodeInteractor waves.NodeInteractor, sequenceChan chan<- int64) *gin.Engine {
 	logger := log.Logger.Named("server.requestHandler")
 
 	renderError := createErrorRenderer(logger)
@@ -118,23 +125,39 @@ func Create(service sequence.Service, nodeInteractor waves.NodeInteractor) *gin.
 		}
 
 		// validate the first tx
-		isValid, err := nodeInteractor.ValidateTx(req.Txs[0])
+		validationResult, err := nodeInteractor.ValidateTx(req.Txs[0])
 		if err != nil {
 			logger.Error("cannot validate the first tx of sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
 			renderError(c, http.StatusInternalServerError, InternalServerError())
 			return
 		}
-		if !isValid {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("txs", "The first tx is invalid."))
+		if !validationResult.IsValid {
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("txs", fmt.Sprintf("The first tx is invalid: %s.", validationResult.ErrorMessage)))
 			return
 		}
 
-		sequenceID, err := service.CreateSequence(req.Txs)
+		txs := []sequence.TxWithIDDto{}
+		var t txDto
+		for _, tx := range req.Txs {
+			err := json.NewDecoder(strings.NewReader(tx)).Decode(&t)
+			if err != nil {
+				logger.Error("cannot decode txs", zap.Error(err))
+				renderError(c, http.StatusInternalServerError, InternalServerError())
+				return
+			}
+			txs = append(txs, sequence.TxWithIDDto{
+				ID: t.id,
+				Tx: tx,
+			})
+		}
+		sequenceID, err := service.CreateSequence(txs)
 		if err != nil {
 			logger.Error("cannot create sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
 			renderError(c, http.StatusInternalServerError, InternalServerError())
 			return
 		}
+
+		sequenceChan <- sequenceID
 
 		c.JSON(http.StatusOK, gin.H{
 			"id": sequenceID,

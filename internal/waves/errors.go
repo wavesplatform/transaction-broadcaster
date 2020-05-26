@@ -2,12 +2,11 @@ package waves
 
 // Waves error codes
 const (
-	ValidateTxServerError = iota + 0
-	BroadcastClientError
+	BroadcastClientError = iota + 0
 	BroadcastServerError
-	WaitForTxTimeoutError
-	WaitForTxServerError
-	NodeInteractorInternalError = 999
+	GetTxStatusError
+	WaitForTxStatusTimeoutError
+	InternalError = 999
 )
 
 type wavesErrorImpl struct {

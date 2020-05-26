@@ -1,12 +1,11 @@
 package config
 
 import (
-	"net/url"
-
 	"github.com/caarlos0/env/v6"
 
 	"github.com/waves-exchange/broadcaster/internal/dispatcher"
 	"github.com/waves-exchange/broadcaster/internal/sequence"
+	"github.com/waves-exchange/broadcaster/internal/waves"
 	"github.com/waves-exchange/broadcaster/internal/worker"
 )
 
@@ -15,12 +14,10 @@ type Config struct {
 	Port int  `env:"PORT" envDefault:"3000"`
 	Dev  bool `env:"DEV" envDefault:"false"`
 
-	NodeURL    url.URL `env:"NODE_URL,required"`
-	NodeAPIKey string  `env:"NODE_API_KEY,required"`
-
 	Pg         sequence.PgConfig
 	Dispatcher dispatcher.Config
 	Worker     worker.Config
+	Waves      waves.Config
 }
 
 // Load returns config from environment variables

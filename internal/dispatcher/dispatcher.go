@@ -3,16 +3,13 @@ package dispatcher
 import (
 	"time"
 
+	"github.com/waves-exchange/broadcaster/internal/waves"
+
 	"github.com/waves-exchange/broadcaster/internal/log"
 	"github.com/waves-exchange/broadcaster/internal/sequence"
+	"github.com/waves-exchange/broadcaster/internal/worker"
 	"go.uber.org/zap"
 )
-
-// Config of the dispatcher
-type Config struct {
-	Delay          int64 `env:"DISPATCHER_DELAY" envDefault:"1000"`
-	FrozenDuration int64 `env:"DISPATCHER_FROZEN_DURATION" envDefault:"600000"`
-}
 
 // Dispatcher ...
 type Dispatcher interface {
@@ -21,67 +18,86 @@ type Dispatcher interface {
 
 type dispatcherImpl struct {
 	service        sequence.Service
+	nodeInteractor waves.NodeInteractor
 	logger         *zap.Logger
-	sequenceChan   chan<- int64
-	cancelChan     <-chan struct{}
-	delay          time.Duration
-	frozenDuration time.Duration
+	sequenceChan   chan int64
+	resultsChan    chan worker.Result
+	loopDelay      time.Duration
+	sequenceTTL    time.Duration
 }
 
-// Init creates new Dispatcher
-func Init(service sequence.Service, sequenceChan chan<- int64, cancelChan <-chan struct{}, delay time.Duration, frozenDuration time.Duration) Dispatcher {
+// Create creates new Dispatcher
+func Create(service sequence.Service, nodeInteractor waves.NodeInteractor, sequenceChan chan int64, loopDelay, sequenceTTL int64) Dispatcher {
 	logger := log.Logger.Named("dispatcher")
+	resultsChan := make(chan worker.Result)
+
 	return &dispatcherImpl{
 		service:        service,
+		nodeInteractor: nodeInteractor,
 		logger:         logger,
 		sequenceChan:   sequenceChan,
-		cancelChan:     cancelChan,
-		delay:          delay,
-		frozenDuration: frozenDuration,
+		resultsChan:    resultsChan,
+		loopDelay:      time.Duration(loopDelay) * time.Millisecond,
+		sequenceTTL:    time.Duration(sequenceTTL) * time.Millisecond,
 	}
 }
 
 // RunLoop starts dispatcher infinite loop listening sequenceChan for the next sequence to process
 func (d *dispatcherImpl) RunLoop() {
+	ticker := time.NewTicker(d.loopDelay)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-d.cancelChan:
-			d.logger.Info("got message from cancelChan")
-			return
+		case seqID := <-d.sequenceChan:
+			err := d.service.SetSequenceProcessingStateByID(seqID)
+			if err != nil {
+				d.logger.Error("error occured while setting sequence error state", zap.Error(err))
+				return
+			}
+			d.runWorker(seqID)
+		case res := <-d.resultsChan:
+			if res.Error != nil {
+				switch res.Error.(type) {
+				case worker.RecoverableError:
+					d.runWorker(res.SequenceID)
+				case worker.NonRecoverableError:
+					err := d.service.SetSequenceErrorStateByID(res.SequenceID, res.Error)
+					if err != nil {
+						d.logger.Error("error occured while setting sequence error state", zap.Error(err))
+						return
+					}
+				case worker.FatalError:
+					return
+				default:
+				}
+			} else {
+				err := d.service.SetSequenceDoneStateByID(res.SequenceID)
+				if err != nil {
+					d.logger.Error("error occured while setting sequence done state", zap.Error(err))
+					return
+				}
+			}
+		case <-ticker.C:
+			hangingSequenceIds, err := d.service.GetHangingSequenceIds(d.sequenceTTL)
+			if err != nil {
+				d.logger.Error("error occured while getting hangins sequence ids", zap.Error(err))
+				return
+			}
+
+			for _, seqID := range hangingSequenceIds {
+				d.runWorker(seqID)
+			}
 		default:
-			d.logger.Debug("dispatcher new loop")
-
-			// Try to find new free (not under processing) sequences
-			freeIds, err := d.service.GetFreeSequenceIds()
-			if err != nil {
-				d.logger.Error("error occured on getting free sequence ids", zap.Error(err))
-				return
-			}
-
-			if len(freeIds) > 0 {
-				d.logger.Debug("there are new free sequences", zap.Int64s("ids", freeIds))
-			}
-
-			for _, id := range freeIds {
-				d.sequenceChan <- id
-			}
-
-			// Try to find frozen sequences (after crashes)
-			frozenIds, err := d.service.GetFrozenSequenceIds(d.frozenDuration)
-			if err != nil {
-				d.logger.Error("error occured on getting frozen sequence ids", zap.Error(err))
-				return
-			}
-
-			if len(frozenIds) > 0 {
-				d.logger.Debug("there are frozen sequences", zap.Int64s("ids", frozenIds))
-			}
-
-			for _, id := range frozenIds {
-				d.sequenceChan <- id
-			}
-
-			time.Sleep(d.delay)
+			// nothing to do, just wait for the next message
 		}
 	}
+}
+
+func (d *dispatcherImpl) runWorker(seqID int64) {
+	txProcessingTTL := int32(3000)
+	nHeights := int32(6)
+	waitForNextHeightDelay := int32(1000)
+	w := worker.NewWorker(d.service, d.nodeInteractor, d.resultsChan, txProcessingTTL, nHeights, waitForNextHeightDelay)
+	go w.Run(seqID)
 }

@@ -8,28 +8,40 @@ import (
 
 // Sequence represents sequence type with json marshaling description
 type Sequence struct {
-	ID               int64 `json:"id"`
-	BroadcastedCount int32 `json:"broadcastedCount"`
-	TotalCount       int32 `json:"totalCount"`
-	HasError         bool  `json:"hasError"`
-	IsProcessing     bool  `json:"-"` // skip in json
-	CreatedAt        int64 `json:"createdAt"`
-	UpdatedAt        int64 `json:"updatedAt"`
+	ID               int64         `json:"id"`
+	BroadcastedCount uint32        `json:"broadcastedCount"`
+	TotalCount       uint32        `json:"totalCount"`
+	State            SequenceState `json:"state"`
+	ErrorMessage     string        `json:"errorMessage"`
+	CreatedAt        time.Time     `json:"createdAt"`
+	UpdatedAt        time.Time     `json:"updatedAt"`
 }
 
-// SequenceTxs represents sequence transactions type
-type SequenceTxs []string
+// SequenceTx represents sequence transactions type
+type SequenceTx struct {
+	ID                 string           `json:"id"`
+	SequenceID         int64            `json:"-"`
+	State              TransactionState `json:"state"`
+	ErrorMessage       string           `json:"errorMessage,omitempty"`
+	PositionInSequence uint16           `json:"positionInSequence"`
+	Tx                 string           `json:"tx"`
+	CreatedAt          time.Time        `json:"createdAt"`
+	UpdatedAt          time.Time        `json:"updatedAt"`
+}
 
 // Service ...
 type Service interface {
 	GetSequenceByID(id int64) (*Sequence, error)
-	GetSequenceTxsByID(id int64, after int32) (SequenceTxs, error)
-	GetFreeSequenceIds() ([]int64, error)
-	GetFrozenSequenceIds(frozenTimeout time.Duration) ([]int64, error)
-	CreateSequence(txs []string) (int64, error)
-	SetSequenceErrorStateAndRelease(id int64) error
-	UpdateSequenceProcessingState(id int64, isProcessing bool) error
-	IncreaseSequenceBroadcastedCount(id int64) error
+	GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error)
+	GetHangingSequenceIds(ttl time.Duration) ([]int64, error)
+	CreateSequence(txs []TxWithIDDto) (int64, error)
+	SetSequenceProcessingStateByID(sequenceID int64) error
+	SetSequenceDoneStateByID(sequenceID int64) error
+	SetSequenceErrorStateByID(sequenceID int64, err error) error
+	IncreaseSequenceBroadcastedCount(sequence Sequence) error
+	SetSequenceTxState(tx *SequenceTx, newState TransactionState) error
+	SetSequenceTxErrorState(tx *SequenceTx, errorMessage string) error
+	SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error
 }
 
 type serviceImpl struct {
@@ -42,8 +54,8 @@ func NewService(repo Repo) Service {
 }
 
 // GetSequenceByID ...
-func (s *serviceImpl) GetSequenceByID(id int64) (*Sequence, error) {
-	seqDto, err := s.repo.GetSequenceByID(id)
+func (s *serviceImpl) GetSequenceByID(sequenceID int64) (*Sequence, error) {
+	seqDto, err := s.repo.GetSequenceByID(sequenceID)
 	if err != nil {
 		if err.Error() == pg.ErrNoRows.Error() {
 			return nil, nil
@@ -55,50 +67,79 @@ func (s *serviceImpl) GetSequenceByID(id int64) (*Sequence, error) {
 		ID:               seqDto.ID,
 		BroadcastedCount: seqDto.BroadcastedCount,
 		TotalCount:       seqDto.TotalCount,
-		HasError:         seqDto.HasError,
-		IsProcessing:     seqDto.IsProcessing,
-		CreatedAt:        seqDto.CreatedAt.Unix() * 1000,
-		UpdatedAt:        seqDto.UpdatedAt.Unix() * 1000,
+		State:            seqDto.State,
+		ErrorMessage:     seqDto.ErrorMessage,
+		CreatedAt:        seqDto.CreatedAt,
+		UpdatedAt:        seqDto.UpdatedAt,
 	}
 	return &seq, nil
 }
 
-func (s *serviceImpl) GetSequenceTxsByID(id int64, after int32) (SequenceTxs, error) {
-	txs, err := s.repo.GetSequenceTxsByID(id, after)
+func (s *serviceImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error) {
+	txsDto, err := s.repo.GetSequenceTxsByID(sequenceID)
 	if err != nil {
 		return nil, err
 	}
 
-	return SequenceTxs(txs), nil
+	txs := []*SequenceTx{}
+	for _, txDto := range txsDto {
+		txs = append(txs, &SequenceTx{
+			ID:                 txDto.ID,
+			SequenceID:         txDto.SequenceID,
+			State:              txDto.State,
+			ErrorMessage:       txDto.ErrorMessage,
+			PositionInSequence: txDto.PositionInSequence,
+			Tx:                 txDto.Tx,
+			CreatedAt:          txDto.CreatedAt,
+			UpdatedAt:          txDto.UpdatedAt,
+		})
+	}
+
+	return txs, nil
 }
 
-// GetFreeSequenceIds ...
-func (s *serviceImpl) GetFreeSequenceIds() ([]int64, error) {
-	return s.repo.GetFreeSequenceIds()
-}
-
-// GetFrozenSequenceIds tries to get frozen sequence ids
-// Frozen sequences - with is_processing=true, not totally broadcasted and not updated for frozenTimeout.
-func (s *serviceImpl) GetFrozenSequenceIds(frozenTimeout time.Duration) ([]int64, error) {
-	return s.repo.GetFrozenSequenceIds(frozenTimeout)
+// GetHangingSequenceIds tries to get hanging sequence ids
+// Hanging sequences - with is_processing=true, not totally broadcasted and not updated for ttl.
+func (s *serviceImpl) GetHangingSequenceIds(ttl time.Duration) ([]int64, error) {
+	return s.repo.GetHangingSequenceIds(ttl)
 }
 
 // CreateSequence ...
-func (s *serviceImpl) CreateSequence(txs []string) (int64, error) {
+func (s *serviceImpl) CreateSequence(txs []TxWithIDDto) (int64, error) {
 	return s.repo.CreateSequence(txs)
 }
 
-// SetSequenceErrorStateAndRelease ...
-func (s *serviceImpl) SetSequenceErrorStateAndRelease(id int64) error {
-	return s.repo.SetSequenceErrorStateAndRelease(id)
+// SetSequenceProcessingState ...
+func (s *serviceImpl) SetSequenceProcessingStateByID(sequenceID int64) error {
+	return s.repo.SetSequenceState(sequenceID, SequenceStateProcessing)
 }
 
-// UpdateSequenceProcessingState ...
-func (s *serviceImpl) UpdateSequenceProcessingState(id int64, isProcessing bool) error {
-	return s.repo.UpdateSequenceProcessingState(id, isProcessing)
+// SetSequenceDoneState ...
+func (s *serviceImpl) SetSequenceDoneStateByID(sequenceID int64) error {
+	return s.repo.SetSequenceState(sequenceID, SequenceStateDone)
+}
+
+// SetSequenceErrorState ...
+func (s *serviceImpl) SetSequenceErrorStateByID(sequenceID int64, err error) error {
+	return s.repo.SetSequenceErrorState(sequenceID, err)
 }
 
 // IncreaseSequenceBroadcastedCount ...
-func (s *serviceImpl) IncreaseSequenceBroadcastedCount(id int64) error {
-	return s.repo.IncreaseSequenceBroadcastedCount(id)
+func (s *serviceImpl) IncreaseSequenceBroadcastedCount(sequence Sequence) error {
+	return s.repo.IncreaseSequenceBroadcastedCount(sequence.ID)
+}
+
+// SetSequenceTxState
+func (s *serviceImpl) SetSequenceTxState(tx *SequenceTx, newState TransactionState) error {
+	return s.repo.SetSequenceTxState(tx.SequenceID, tx.ID, newState)
+}
+
+// SetSequenceTxErrorState
+func (s *serviceImpl) SetSequenceTxErrorState(tx *SequenceTx, errorMessage string) error {
+	return s.repo.SetSequenceTxErrorState(tx.SequenceID, tx.ID, errorMessage)
+}
+
+// SetSequenceTxsStateAfter
+func (s *serviceImpl) SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error {
+	return s.repo.SetSequenceTxsStateAfter(sequenceID, txID, newState)
 }
