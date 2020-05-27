@@ -8,7 +8,8 @@
     "id": <number>,
     "broadcastedCount": <number>,
     "totalCount": <number>,
-    "hasError": <boolean>,
+    "state" :<string>,   // one of sequence states
+    "errorMessage": <string>,
     "createdAt": <number>,
     "updatedAt": <number>
 }
@@ -43,26 +44,37 @@
         {
             "code": <number>,
             "message": <string>,
-            "details: {}
+            "details: <Record<string,any>>
         }
     ]
 }
 ```
+
+## Sequence states
+
+1. `pending` - sequence is pending processing
+2. `processing` - sequence is under processing
+3. `done` - after last tx there is `BLOCKS_AFTER_LAST_TX` blocks in the blockchain
+4. `error` - check the `error message` sequence field
+
 
 ## Service environment variables
 | # | Name | Type | Default | Description |
 | - | ---- | ---- | ------- | ----------- |
 | 1 | `PORT` | number | 3000 | Service port |
 | 2 | `DEV` | boolean | false | Is dev mode |
-| 3 | `NODE_URL` | string | - | Node URL that will be used to validate and broadcast txs |
-| 4 | `NODE_API_KEY` | string | - | Node API Key, that will be used to validate txs |
-| 5 | `PGHOST` | string | - | PostgreSQL host |
-| 6 | `PGPORT` | number | 5432 | PostgreSQL port |
-| 7 | `PGDATABASE` | string | - | PostgreSQL used database |
-| 8 | `PGUSER` | string | - | PostgreSQL writer user login |
-| 9 | `PGPASSWORD` | string | - | PostgreSQL writer user password |
-| 10 | `DISPATCHER_DELAY` | number | 1000 | Number in ms - new sequences checking delay |
-| 11 | `DISPATCHER_FROZEN_DURATION` | number | 600000 | Number in ms - in which duration sequences in state IsProcessing were not updated - after frozen duration these sequences state will be resetted, and dispatcher will take them out |
-| 12 | `WORKERS_COUNT` | number | 20 | Max workers count |
-| 13 | `WORKERS_SEQUENCE_PROCESSING_DELAY` | number | 1000 | Number in ms - worker pause after every sequence processing |
-| 14 | `WORKERS_TX_PROCESSING_DELAY` | number | 1000 | Number in ms - worker pause after every tx processing |
+| 3 | `PGHOST` | string | - | PostgreSQL host |
+| 4 | `PGPORT` | number | 5432 | PostgreSQL port |
+| 5 | `PGDATABASE` | string | - | PostgreSQL used database |
+| 6 | `PGUSER` | string | - | PostgreSQL writer user login |
+| 7 | `PGPASSWORD` | string | - | PostgreSQL writer user password |
+| 8 | `WAVES_NODE_URL` | string | - | Node URL that will be used to validate and broadcast txs |
+| 9 | `WAVES_NODE_API_KEY` | string | - | Node API Key, that will be used to validate txs |
+| 10 | `WAVES_WAIT_FOR_TX_STATUS_DELAY` | number | 1000 | Number in ms - delay to recheck tx status |
+| 11 | `WAVES_WAIT_FOR_TX_TIMEOUT` | number | 1000 | Number in ms - time after which tx status checking is considering as failed |
+| 12 | `DISPATCHER_LOOP_DELAY` | number | 1000 | Number in ms - check for hanging sequences delay |
+| 13 | `DISPATCHER_SEQUENCE_TTL` | number | 5000 | Number in ms - in which time sequences in state `processing` were not updated and have to be reseted, and dispatcher will take them out |
+| 14 | `WORKER_TX_PROCESSING_TTL` | number | 3000 | Number in ms - after which time transactions in state `processing` were not updated and have to be retaken |
+| 15 | `WORKER_BLOCKS_AFTER_LAST_TX` | number | 6 | Number - after which blocks number sequence is considered as done |
+| 16 | `WORKER_WAIT_FOR_NEXT_HEIGHT_DELAY` | number | 1000 | Number in ms - the time after which worker checks the blockchain height again |
+
