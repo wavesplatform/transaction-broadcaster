@@ -29,6 +29,7 @@ func main() {
 	flag.Parse()
 
 	db := pg.Connect(&pg.Options{
+		Addr:     fmt.Sprintf("%s:%s", os.Getenv("PGHOST"), os.Getenv("PGPORT")),
 		Database: os.Getenv("PGDATABASE"),
 		User:     os.Getenv("PGUSER"),
 		Password: os.Getenv("PGPASSWORD"),

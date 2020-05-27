@@ -20,8 +20,8 @@ type transactionModel struct {
 }
 
 type validateTxResponse struct {
-	valid bool
-	trace []string
+	Valid bool
+	Error string
 }
 
 // ValidationResult represents result of validate tx operation
@@ -148,15 +148,28 @@ func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 		defer resp.Body.Close()
 	}
 
-	validateTx := validateTxResponse{}
-	err = json.NewDecoder(resp.Body).Decode(&validateTx)
+	if resp.StatusCode == http.StatusOK {
+		validateTx := validateTxResponse{}
+		err = json.NewDecoder(resp.Body).Decode(&validateTx)
+		if err != nil {
+			return nil, NewWavesError(InternalError, err.Error())
+		}
+
+		return &ValidationResult{
+			IsValid:      validateTx.Valid,
+			ErrorMessage: validateTx.Error,
+		}, nil
+	}
+
+	validateTxError := errorResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&validateTxError)
 	if err != nil {
 		return nil, NewWavesError(InternalError, err.Error())
 	}
 
 	return &ValidationResult{
-		IsValid:      validateTx.valid,
-		ErrorMessage: strings.Join(validateTx.trace, ";"),
+		IsValid:      false,
+		ErrorMessage: validateTxError.Message,
 	}, nil
 }
 

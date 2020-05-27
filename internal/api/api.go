@@ -20,12 +20,12 @@ import (
 
 var errInternalServerError = errors.New("Internal Server Error")
 
-type txsRequest struct {
-	Txs []string `json:"txs" binding:"required"`
+type txDto struct {
+	ID string `json:"id"`
 }
 
-type txDto struct {
-	id string
+type txsRequest struct {
+	Txs []string `json:"txs" binding:"required"`
 }
 
 func accessLog(logger *zap.Logger) func(*gin.Context) {
@@ -113,7 +113,7 @@ func Create(service sequence.Service, nodeInteractor waves.NodeInteractor, seque
 			} else if err.Error() == "Key: 'txsRequest.Txs' Error:Field validation for 'Txs' failed on the 'required' tag" {
 				renderError(c, http.StatusBadRequest, MissingRequiredParameter("txs"))
 			} else {
-				renderError(c, http.StatusBadRequest, InvalidParameterValue("txs", "txs parameter has to be array of string"))
+				renderError(c, http.StatusBadRequest, InvalidParameterValue("txs", "txs parameter has to be an array of string"))
 			}
 
 			return
@@ -141,12 +141,12 @@ func Create(service sequence.Service, nodeInteractor waves.NodeInteractor, seque
 		for _, tx := range req.Txs {
 			err := json.NewDecoder(strings.NewReader(tx)).Decode(&t)
 			if err != nil {
-				logger.Error("cannot decode txs", zap.Error(err))
+				logger.Error("cannot decode one of the sequence's tx", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
 				renderError(c, http.StatusInternalServerError, InternalServerError())
 				return
 			}
 			txs = append(txs, sequence.TxWithIDDto{
-				ID: t.id,
+				ID: t.ID,
 				Tx: tx,
 			})
 		}

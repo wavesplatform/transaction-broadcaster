@@ -101,7 +101,7 @@ func NewRepo(db *pg.DB) Repo {
 func (r *repoImpl) GetSequenceByID(sequenceID int64) (*SequenceModel, error) {
 	var seq SequenceModel
 
-	_, err := r.Conn.QueryOne(&seq, "select s.id, s.broadcasted_count, s.total_count, s.has_error, s.is_processing, s.created_at, s.updated_at from sequences s where id=?0", sequenceID)
+	_, err := r.Conn.QueryOne(&seq, "select id, broadcasted_count, total_count, state, error_message, created_at, updated_at from sequences where id=?0", sequenceID)
 	if err != nil {
 		return nil, err
 	}
