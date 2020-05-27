@@ -36,5 +36,13 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	if err := env.Parse(&c.Worker); err != nil {
+		return nil, err
+	}
+
+	if err := env.Parse(&c.Waves); err != nil {
+		return nil, err
+	}
+
 	return &c, nil
 }

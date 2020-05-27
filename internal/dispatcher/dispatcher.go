@@ -50,35 +50,44 @@ func (d *dispatcherImpl) RunLoop() {
 	for {
 		select {
 		case seqID := <-d.sequenceChan:
-			err := d.service.SetSequenceProcessingStateByID(seqID)
+			d.logger.Debug("got new sequence", zap.Int64("sequence_id", seqID))
+			err := d.service.SetSequenceStateByID(seqID, sequence.SequenceStateProcessing)
 			if err != nil {
-				d.logger.Error("error occured while setting sequence error state", zap.Error(err))
+				d.logger.Error("error occured while setting sequence processing state", zap.Error(err))
 				return
 			}
 			d.runWorker(seqID)
 		case res := <-d.resultsChan:
+			d.logger.Debug("got new result", zap.Int64("sequence_id", res.SequenceID), zap.Bool("has_error", res.Error != nil))
 			if res.Error != nil {
 				switch res.Error.(type) {
 				case worker.RecoverableError:
+					d.logger.Debug("recoverable error", zap.String("message", res.Error.Error()))
+
 					d.runWorker(res.SequenceID)
 				case worker.NonRecoverableError:
+					d.logger.Debug("non-recoverable error", zap.String("message", res.Error.Error()))
+
 					err := d.service.SetSequenceErrorStateByID(res.SequenceID, res.Error)
 					if err != nil {
 						d.logger.Error("error occured while setting sequence error state", zap.Error(err))
 						return
 					}
 				case worker.FatalError:
+					d.logger.Debug("fatal error", zap.String("message", res.Error.Error()))
+
 					return
 				default:
 				}
 			} else {
-				err := d.service.SetSequenceDoneStateByID(res.SequenceID)
+				err := d.service.SetSequenceStateByID(res.SequenceID, sequence.SequenceStateDone)
 				if err != nil {
 					d.logger.Error("error occured while setting sequence done state", zap.Error(err))
 					return
 				}
 			}
 		case <-ticker.C:
+			d.logger.Debug("next ticker tick")
 			hangingSequenceIds, err := d.service.GetHangingSequenceIds(d.sequenceTTL)
 			if err != nil {
 				d.logger.Error("error occured while getting hangins sequence ids", zap.Error(err))
@@ -86,6 +95,13 @@ func (d *dispatcherImpl) RunLoop() {
 			}
 
 			for _, seqID := range hangingSequenceIds {
+				// refresh sequence status
+				err := d.service.SetSequenceStateByID(seqID, sequence.SequenceStateProcessing)
+				if err != nil {
+					d.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
+					return
+				}
+
 				d.runWorker(seqID)
 			}
 		default:

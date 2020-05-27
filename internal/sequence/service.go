@@ -12,7 +12,7 @@ type Sequence struct {
 	BroadcastedCount uint32        `json:"broadcastedCount"`
 	TotalCount       uint32        `json:"totalCount"`
 	State            SequenceState `json:"state"`
-	ErrorMessage     string        `json:"errorMessage"`
+	ErrorMessage     string        `json:"errorMessage,omitempty"`
 	CreatedAt        time.Time     `json:"createdAt"`
 	UpdatedAt        time.Time     `json:"updatedAt"`
 }
@@ -22,6 +22,7 @@ type SequenceTx struct {
 	ID                 string           `json:"id"`
 	SequenceID         int64            `json:"-"`
 	State              TransactionState `json:"state"`
+	Height             int32            `json:"height"`
 	ErrorMessage       string           `json:"errorMessage,omitempty"`
 	PositionInSequence uint16           `json:"positionInSequence"`
 	Tx                 string           `json:"tx"`
@@ -35,11 +36,10 @@ type Service interface {
 	GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error)
 	GetHangingSequenceIds(ttl time.Duration) ([]int64, error)
 	CreateSequence(txs []TxWithIDDto) (int64, error)
-	SetSequenceProcessingStateByID(sequenceID int64) error
-	SetSequenceDoneStateByID(sequenceID int64) error
+	SetSequenceStateByID(sequenceID int64, newState SequenceState) error
 	SetSequenceErrorStateByID(sequenceID int64, err error) error
-	IncreaseSequenceBroadcastedCount(sequence Sequence) error
 	SetSequenceTxState(tx *SequenceTx, newState TransactionState) error
+	SetSequenceTxConfirmedState(tx *SequenceTx, height int32) error
 	SetSequenceTxErrorState(tx *SequenceTx, errorMessage string) error
 	SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error
 }
@@ -48,7 +48,7 @@ type serviceImpl struct {
 	repo Repo
 }
 
-// NewService ...
+// NewService returns instance of Service interface implementation
 func NewService(repo Repo) Service {
 	return &serviceImpl{repo: repo}
 }
@@ -87,6 +87,7 @@ func (s *serviceImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error
 			ID:                 txDto.ID,
 			SequenceID:         txDto.SequenceID,
 			State:              txDto.State,
+			Height:             txDto.Height,
 			ErrorMessage:       txDto.ErrorMessage,
 			PositionInSequence: txDto.PositionInSequence,
 			Tx:                 txDto.Tx,
@@ -109,14 +110,9 @@ func (s *serviceImpl) CreateSequence(txs []TxWithIDDto) (int64, error) {
 	return s.repo.CreateSequence(txs)
 }
 
-// SetSequenceProcessingState ...
-func (s *serviceImpl) SetSequenceProcessingStateByID(sequenceID int64) error {
-	return s.repo.SetSequenceState(sequenceID, SequenceStateProcessing)
-}
-
-// SetSequenceDoneState ...
-func (s *serviceImpl) SetSequenceDoneStateByID(sequenceID int64) error {
-	return s.repo.SetSequenceState(sequenceID, SequenceStateDone)
+// SetSequenceStateByID
+func (s *serviceImpl) SetSequenceStateByID(sequenceID int64, newState SequenceState) error {
+	return s.repo.SetSequenceState(sequenceID, newState)
 }
 
 // SetSequenceErrorState ...
@@ -124,14 +120,14 @@ func (s *serviceImpl) SetSequenceErrorStateByID(sequenceID int64, err error) err
 	return s.repo.SetSequenceErrorState(sequenceID, err)
 }
 
-// IncreaseSequenceBroadcastedCount ...
-func (s *serviceImpl) IncreaseSequenceBroadcastedCount(sequence Sequence) error {
-	return s.repo.IncreaseSequenceBroadcastedCount(sequence.ID)
-}
-
 // SetSequenceTxState
 func (s *serviceImpl) SetSequenceTxState(tx *SequenceTx, newState TransactionState) error {
 	return s.repo.SetSequenceTxState(tx.SequenceID, tx.ID, newState)
+}
+
+// SetSequenceTxConfirmedState
+func (s *serviceImpl) SetSequenceTxConfirmedState(tx *SequenceTx, height int32) error {
+	return s.repo.SetSequenceTxConfirmedState(tx.SequenceID, tx.ID, height)
 }
 
 // SetSequenceTxErrorState

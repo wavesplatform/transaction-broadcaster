@@ -12,11 +12,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// TransactionID represents type of id of tx
-type TransactionID string
-
 type transactionModel struct {
-	id TransactionID
+	id string
 }
 
 type validateTxResponse struct {
@@ -24,22 +21,16 @@ type validateTxResponse struct {
 	Error string
 }
 
-// ValidationResult represents result of validate tx operation
-type ValidationResult struct {
-	IsValid      bool
-	ErrorMessage string
-}
-
 type broadcastResponse struct {
-	ID TransactionID
+	ID string
 }
 
 type transactionsStatusRequest struct {
-	ids []TransactionID
+	IDs []string `json:"ids"`
 }
 
 type transactionStatusResponse struct {
-	ID            TransactionID
+	ID            string
 	Status        TransactionStatus
 	Height        int32
 	Confirmations int32
@@ -55,28 +46,36 @@ type errorResponse struct {
 	Message string
 }
 
+// ValidationResult represents result of ValidateTx
+type ValidationResult struct {
+	IsValid      bool
+	ErrorMessage string
+}
+
 // TransactionStatus represents current status of transaction
 type TransactionStatus string
 
-//
 const (
-	TransactionStatusNotFound    = "not_found"
+	// TransactionStatusNotFound represents state when tx does not exists in the blockchain
+	TransactionStatusNotFound = "not_found"
+	// TransactionStatusUnconfirmed represents state when tx located in utx-pool
 	TransactionStatusUnconfirmed = "unconfirmed"
-	TransactionStatusConfirmed   = "confirmed"
+	// TransactionStatusConfirmed represents state when tx is confirmed
+	TransactionStatusConfirmed = "confirmed"
 )
 
-// Availability represents map of transactionId:isTransactionAvailable (tx has status not not_found)
-type Availability map[TransactionID]bool
+// Availability represents map of string:isTransactionAvailable (tx has status not TransactionStatusNotFound)
+type Availability map[string]bool
 
 // NodeInteractor ...
 type NodeInteractor interface {
 	ValidateTx(string) (*ValidationResult, Error)
-	BroadcastTx(string) (TransactionID, Error)
-	WaitForTxStatus(TransactionID, TransactionStatus) Error
+	BroadcastTx(string) (string, Error)
+	WaitForTxStatus(string, TransactionStatus) (int32, Error)
 	GetCurrentHeight() (int32, Error)
 	WaitForNHeights(int32) Error
 	WaitForNextHeight() Error
-	GetTxsAvailability([]TransactionID) (Availability, Error)
+	GetTxsAvailability([]string) (Availability, Error)
 }
 
 type impl struct {
@@ -91,7 +90,7 @@ const (
 	errorWaitForTxStatusTimeoutMessage = "Wait for tx status time deadline is reached."
 )
 
-// NewNodeInteractor creates new Waves Node interactor
+// NewNodeInteractor returns instance of NodeInteractor interface implementation
 func NewNodeInteractor(nodeURL url.URL, nodeAPIKey string, waitForTxStatusDelay, waitForTxTimeout int32) NodeInteractor {
 	logger := log.Logger.Named("nodeInteractor")
 
@@ -108,6 +107,7 @@ func NewNodeInteractor(nodeURL url.URL, nodeAPIKey string, waitForTxStatusDelay,
 func (r *impl) GetCurrentHeight() (int32, Error) {
 	blocksHeightURL := r.nodeURL
 	blocksHeightURL.Path = "/blocks/height"
+
 	resp, err := http.Get(blocksHeightURL.String())
 	if err != nil {
 		return 0, NewWavesError(InternalError, err.Error())
@@ -129,8 +129,8 @@ func (r *impl) GetCurrentHeight() (int32, Error) {
 func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 	validateURL := r.nodeURL
 	validateURL.Path = "/debug/validate"
-	reader := strings.NewReader(tx)
-	req, err := http.NewRequest("POST", validateURL.String(), reader)
+
+	req, err := http.NewRequest("POST", validateURL.String(), strings.NewReader(tx))
 	if err != nil {
 		r.logger.Error("Cannot create validateTx request", zap.Error(err))
 		return nil, NewWavesError(InternalError, err.Error())
@@ -174,11 +174,11 @@ func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 }
 
 // BroadcastTx broadcasts given tx to blockhain
-func (r *impl) BroadcastTx(tx string) (TransactionID, Error) {
+func (r *impl) BroadcastTx(tx string) (string, Error) {
 	broadcastURL := r.nodeURL
 	broadcastURL.Path = "/transactions/broadcast"
-	reader := strings.NewReader(tx)
-	resp, err := http.Post(broadcastURL.String(), "application/json", reader)
+
+	resp, err := http.Post(broadcastURL.String(), "application/json", strings.NewReader(tx))
 	if err != nil {
 		return "", NewWavesError(InternalError, err.Error())
 	}
@@ -201,7 +201,7 @@ func (r *impl) BroadcastTx(tx string) (TransactionID, Error) {
 				return "", wavesErr
 			}
 
-			if txStatus != TransactionStatusNotFound {
+			if txStatus.Status != TransactionStatusNotFound {
 				return t.id, nil
 			}
 
@@ -227,21 +227,21 @@ func (r *impl) BroadcastTx(tx string) (TransactionID, Error) {
 }
 
 // WaitForTx waits for tx status appearance in the blockchain
-func (r *impl) WaitForTxStatus(txID TransactionID, waitForStatus TransactionStatus) Error {
+func (r *impl) WaitForTxStatus(txID string, waitForStatus TransactionStatus) (int32, Error) {
 	start := time.Now()
 	for {
 		status, err := r.getTxStatus(txID)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
-		if status == waitForStatus {
-			return nil
+		if status.Status == waitForStatus {
+			return status.Height, nil
 		}
 
 		now := time.Now()
 		if now.Sub(start) > r.waitForTxTimeout {
-			return NewWavesError(WaitForTxStatusTimeoutError, errorWaitForTxStatusTimeoutMessage)
+			return 0, NewWavesError(WaitForTxStatusTimeoutError, errorWaitForTxStatusTimeoutMessage)
 		}
 
 		time.Sleep(r.waitForTxStatusDelay)
@@ -277,26 +277,33 @@ func (r *impl) WaitForNextHeight() Error {
 }
 
 // GetTxsAvailability
-func (r *impl) GetTxsAvailability(txIDs []TransactionID) (Availability, Error) {
+func (r *impl) GetTxsAvailability(txIDs []string) (Availability, Error) {
 	txsStatusURL := r.nodeURL
 	txsStatusURL.Path = "/transactions/status"
 
 	req, err := json.Marshal(transactionsStatusRequest{
-		ids: txIDs,
+		IDs: txIDs,
 	})
 	if err != nil {
 		return nil, NewWavesError(InternalError, err.Error())
 	}
 
-	reader := bytes.NewReader(req)
-
-	resp, err := http.Post(txsStatusURL.String(), "application/json", reader)
+	resp, err := http.Post(txsStatusURL.String(), "application/json", bytes.NewBuffer(req))
 	if err != nil {
 		return nil, NewWavesError(InternalError, err.Error())
 	}
 
 	if resp != nil {
 		defer resp.Body.Close()
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		errorResponseDto := errorResponse{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponseDto)
+		if err != nil {
+			return nil, NewWavesError(InternalError, err.Error())
+		}
+		return nil, NewWavesError(InternalError, errorResponseDto.Message)
 	}
 
 	txStatuses := transactionsStatusResponse{}
@@ -313,16 +320,17 @@ func (r *impl) GetTxsAvailability(txIDs []TransactionID) (Availability, Error) {
 	return availability, nil
 }
 
-func (r *impl) getTxStatus(txID TransactionID) (TransactionStatus, Error) {
+func (r *impl) getTxStatus(txID string) (*transactionStatusResponse, Error) {
 	txStatusURL := r.nodeURL
 	txStatusURL.Path = "/transactions/status"
+
 	q := url.Values{}
-	q.Set("id", string(txID))
+	q.Set("id", txID)
 	txStatusURL.RawQuery = q.Encode()
 
 	resp, err := http.Get(txStatusURL.String())
 	if err != nil {
-		return "", NewWavesError(InternalError, err.Error())
+		return nil, NewWavesError(InternalError, err.Error())
 	}
 
 	if resp != nil {
@@ -330,14 +338,14 @@ func (r *impl) getTxStatus(txID TransactionID) (TransactionStatus, Error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", NewWavesError(GetTxStatusError, resp.Status)
+		return nil, NewWavesError(GetTxStatusError, resp.Status)
 	}
 
-	txStatus := transactionStatusResponse{}
+	txStatus := transactionsStatusResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&txStatus)
 	if err != nil {
-		return "", NewWavesError(InternalError, err.Error())
+		return nil, NewWavesError(InternalError, err.Error())
 	}
 
-	return txStatus.Status, nil
+	return &txStatus[0], nil
 }
