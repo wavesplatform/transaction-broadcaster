@@ -15,7 +15,7 @@ func NewRecoverableError(message string) RecoverableError {
 }
 
 func (e RecoverableError) Error() string {
-	return fmt.Sprintf("Recoverable error with reason: %s.", e.message)
+	return fmt.Sprintf("recoverable error with reason: %s.", e.message)
 }
 
 // NonRecoverableError represents non recoverable error
@@ -31,7 +31,7 @@ func NewNonRecoverableError(message string) NonRecoverableError {
 }
 
 func (e NonRecoverableError) Error() string {
-	return fmt.Sprintf("Nonrecoverable error with reason: %s.", e.message)
+	return fmt.Sprintf("non-recoverable error with reason: %s.", e.message)
 }
 
 // FatalError represents fatal error (aka exception)
@@ -47,5 +47,5 @@ func NewFatalError(message string) FatalError {
 }
 
 func (e FatalError) Error() string {
-	return fmt.Sprintf("Fatal error with reason: %s.", e.message)
+	return fmt.Sprintf("fatal error with reason: %s.", e.message)
 }

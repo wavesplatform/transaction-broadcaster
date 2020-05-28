@@ -6,8 +6,8 @@ type Result struct {
 	Error      error
 }
 
-// CreateResult returns new instance of Result
-func CreateResult(seqID int64, err error) Result {
+// NewResult returns new instance of Result
+func NewResult(seqID int64, err error) Result {
 	return Result{
 		SequenceID: seqID,
 		Error:      err,

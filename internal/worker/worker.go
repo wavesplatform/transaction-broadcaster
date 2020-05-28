@@ -47,7 +47,7 @@ func (w *workerImpl) Run(sequenceID int64) {
 	txs, err := w.service.GetSequenceTxsByID(sequenceID)
 	if err != nil {
 		w.logger.Error("error occurred while getting sequence txs", zap.Error(err))
-		w.resultsChan <- CreateResult(sequenceID, NewFatalError(err.Error()))
+		w.resultsChan <- NewResult(sequenceID, NewFatalError(err.Error()))
 		return
 	}
 
@@ -70,7 +70,7 @@ func (w *workerImpl) Run(sequenceID int64) {
 			availability, wavesErr := w.nodeInteractor.GetTxsAvailability(confirmedTxIDs)
 			if wavesErr != nil {
 				w.logger.Error("error occurred while fetching txs statuses", zap.Error(wavesErr), zap.Int64("sequence_id", sequenceID))
-				w.resultsChan <- CreateResult(sequenceID, NewRecoverableError(wavesErr.Error()))
+				w.resultsChan <- NewResult(sequenceID, NewRecoverableError(wavesErr.Error()))
 				return
 			}
 
@@ -81,11 +81,11 @@ func (w *workerImpl) Run(sequenceID int64) {
 					err := w.service.SetSequenceTxsStateAfter(sequenceID, txID, sequence.TransactionStatePending)
 					if err != nil {
 						w.logger.Error("error occured while setting txs pending state", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("after_tx_id", txID))
-						w.resultsChan <- CreateResult(sequenceID, NewFatalError(err.Error()))
+						w.resultsChan <- NewResult(sequenceID, NewFatalError(err.Error()))
 						return
 					}
 
-					w.resultsChan <- CreateResult(sequenceID, NewRecoverableError(err.Error()))
+					w.resultsChan <- NewResult(sequenceID, NewRecoverableError(err.Error()))
 					return
 				}
 			}
@@ -96,7 +96,7 @@ func (w *workerImpl) Run(sequenceID int64) {
 			err := w.processTx(tx, true)
 			if err != nil {
 				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
-				w.resultsChan <- CreateResult(tx.SequenceID, err)
+				w.resultsChan <- NewResult(tx.SequenceID, err)
 				return
 			}
 			confirmedTxs[tx.ID] = tx
@@ -110,19 +110,19 @@ func (w *workerImpl) Run(sequenceID int64) {
 			err := w.processTx(tx, true)
 			if err != nil {
 				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
-				w.resultsChan <- CreateResult(tx.SequenceID, err)
+				w.resultsChan <- NewResult(tx.SequenceID, err)
 				return
 			}
 			confirmedTxs[tx.ID] = tx
 		case sequence.TransactionStateError:
-			w.resultsChan <- CreateResult(sequenceID, NewNonRecoverableError(tx.ErrorMessage))
+			w.resultsChan <- NewResult(sequenceID, NewNonRecoverableError(tx.ErrorMessage))
 			return
 		}
 	}
 
 	err = w.waitNHeightsAfterLastTx(sequenceID, confirmedTxs)
 	if err != nil {
-		w.resultsChan <- CreateResult(sequenceID, err)
+		w.resultsChan <- NewResult(sequenceID, err)
 		return
 	}
 

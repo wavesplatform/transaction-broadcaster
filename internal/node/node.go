@@ -86,10 +86,6 @@ type impl struct {
 	waitForTxTimeout     time.Duration
 }
 
-const (
-	errorWaitForTxStatusTimeoutMessage = "Wait for tx status time deadline is reached."
-)
-
 // New returns instance of Interactor interface implementation
 func New(nodeURL url.URL, nodeAPIKey string, waitForTxStatusDelay, waitForTxTimeout int32) Interactor {
 	logger := log.Logger.Named("nodeInteractor")
@@ -241,7 +237,7 @@ func (r *impl) WaitForTxStatus(txID string, waitForStatus TransactionStatus) (in
 
 		now := time.Now()
 		if now.Sub(start) > r.waitForTxTimeout {
-			return 0, NewError(WaitForTxStatusTimeoutError, errorWaitForTxStatusTimeoutMessage)
+			return 0, NewError(WaitForTxStatusTimeoutError, "wait for tx status time deadline is reached")
 		}
 
 		time.Sleep(r.waitForTxStatusDelay)
