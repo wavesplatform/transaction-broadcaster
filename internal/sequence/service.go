@@ -20,25 +20,55 @@ type PgConfig struct {
 // Sequence represents sequence type with json marshaling description
 type Sequence struct {
 	ID               int64     `json:"id"`
-	BroadcastedCount uint32    `json:"broadcastedCount"`
-	TotalCount       uint32    `json:"totalCount"`
+	BroadcastedCount uint32    `json:"broadcasted_count"`
+	TotalCount       uint32    `json:"total_count"`
 	State            State     `json:"state"`
-	ErrorMessage     string    `json:"errorMessage,omitempty"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	ErrorMessage     string    `json:"error_message,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// SequenceTx represents sequence transactions type
+// MarshalJSON overrides default json serializer
+// Its serializes time as unix timestamp
+func (s *Sequence) MarshalJSON() ([]byte, error) {
+	type JSONSequence Sequence
+	return json.Marshal(&struct {
+		*JSONSequence
+		CreatedAt int64 `json:"created_at"`
+		UpdatedAt int64 `json:"updated_at"`
+	}{
+		JSONSequence: (*JSONSequence)(s),
+		CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.UTC().Nanosecond()/1000),
+		UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.UTC().Nanosecond()/1000),
+	})
+}
+
+// SequenceTx represents sequence transaction type
 type SequenceTx struct {
 	ID                 string           `json:"id"`
 	SequenceID         int64            `json:"-"`
 	State              TransactionState `json:"state"`
 	Height             int32            `json:"height"`
-	ErrorMessage       string           `json:"errorMessage,omitempty"`
-	PositionInSequence uint16           `json:"positionInSequence"`
+	ErrorMessage       string           `json:"error_message,omitempty"`
+	PositionInSequence uint16           `json:"position_in_sequence"`
 	Tx                 string           `json:"tx"`
-	CreatedAt          time.Time        `json:"createdAt"`
-	UpdatedAt          time.Time        `json:"updatedAt"`
+	CreatedAt          time.Time        `json:"created_at"`
+	UpdatedAt          time.Time        `json:"updated_at"`
+}
+
+// MarshalJSON overrides default json serializer
+// Its serializes time as unix timestamp
+func (stx *SequenceTx) MarshalJSON() ([]byte, error) {
+	type JSONSequenceTx SequenceTx
+	return json.Marshal(&struct {
+		*JSONSequenceTx
+		CreatedAt int64 `json:"created_at"`
+		UpdatedAt int64 `json:"updated_at"`
+	}{
+		JSONSequenceTx: (*JSONSequenceTx)(stx),
+		CreatedAt:      stx.CreatedAt.Unix()*1000 + int64(stx.CreatedAt.UTC().Nanosecond()/1000),
+		UpdatedAt:      stx.UpdatedAt.Unix()*1000 + int64(stx.UpdatedAt.UTC().Nanosecond()/1000),
+	})
 }
 
 // State type represents type of sequence state

@@ -10,39 +10,56 @@ import (
 	"go.uber.org/zap"
 )
 
+type workerError struct {
+	Err        error
+	SequenceID int64
+}
+
+func (e workerError) Error() string {
+	return e.Err.Error()
+}
+
 // Dispatcher ...
 type Dispatcher interface {
-	RunLoop()
+	RunLoop() error
 }
 
 type dispatcherImpl struct {
-	service        sequence.Service
-	nodeInteractor node.Interactor
-	logger         *zap.Logger
-	sequenceChan   chan int64
-	resultsChan    chan worker.Result
-	loopDelay      time.Duration
-	sequenceTTL    time.Duration
+	service                             sequence.Service
+	nodeInteractor                      node.Interactor
+	logger                              *zap.Logger
+	sequenceChan, completedSequenceChan chan int64
+	errorsChan                          chan workerError
+	loopDelay                           time.Duration
+	sequenceTTL                         time.Duration
+	// worker params
+	txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32
 }
 
 // New returns instance of Dispatcher interface implementation
-func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64) Dispatcher {
+func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
 	logger := log.Logger.Named("dispatcher")
-	resultsChan := make(chan worker.Result)
+	completedSequenceChan := make(chan int64)
+	errorsChan := make(chan workerError)
 
 	return &dispatcherImpl{
-		service:        service,
-		nodeInteractor: nodeInteractor,
-		logger:         logger,
-		sequenceChan:   sequenceChan,
-		resultsChan:    resultsChan,
-		loopDelay:      time.Duration(loopDelay) * time.Millisecond,
-		sequenceTTL:    time.Duration(sequenceTTL) * time.Millisecond,
+		service:               service,
+		nodeInteractor:        nodeInteractor,
+		logger:                logger,
+		sequenceChan:          sequenceChan,
+		completedSequenceChan: completedSequenceChan,
+		errorsChan:            errorsChan,
+		loopDelay:             time.Duration(loopDelay) * time.Millisecond,
+		sequenceTTL:           time.Duration(sequenceTTL) * time.Millisecond,
+
+		txProcessingTTL:        txProcessingTTL,
+		heightsAfterLastTx:     heightsAfterLastTx,
+		waitForNextHeightDelay: waitForNextHeightDelay,
 	}
 }
 
 // RunLoop starts dispatcher infinite work loop
-func (d *dispatcherImpl) RunLoop() {
+func (d *dispatcherImpl) RunLoop() error {
 	ticker := time.NewTicker(d.loopDelay)
 	defer ticker.Stop()
 
@@ -50,47 +67,49 @@ func (d *dispatcherImpl) RunLoop() {
 		select {
 		case seqID := <-d.sequenceChan:
 			d.logger.Debug("got new sequence", zap.Int64("sequence_id", seqID))
+
 			err := d.service.SetSequenceStateByID(seqID, sequence.StateProcessing)
 			if err != nil {
 				d.logger.Error("error occured while setting sequence processing state", zap.Error(err))
-				return
+				return err
 			}
 			d.runWorker(seqID)
-		case res := <-d.resultsChan:
-			d.logger.Debug("got new result", zap.Int64("sequence_id", res.SequenceID), zap.Bool("has_error", res.Error != nil))
-			if res.Error != nil {
-				switch res.Error.(type) {
-				case worker.RecoverableError:
-					d.logger.Debug("recoverable error", zap.String("message", res.Error.Error()))
+		case e := <-d.errorsChan:
+			d.logger.Debug("got new error", zap.Error(e.Err), zap.Int64("sequence_id", e.SequenceID))
 
-					d.runWorker(res.SequenceID)
-				case worker.NonRecoverableError:
-					d.logger.Debug("non-recoverable error", zap.String("message", res.Error.Error()))
+			switch e.Err.(type) {
+			case worker.RecoverableError:
+				d.logger.Debug("recoverable error", zap.String("message", e.Err.Error()))
 
-					err := d.service.SetSequenceErrorStateByID(res.SequenceID, res.Error)
-					if err != nil {
-						d.logger.Error("error occured while setting sequence error state", zap.Error(err))
-						return
-					}
-				case worker.FatalError:
-					d.logger.Debug("fatal error", zap.String("message", res.Error.Error()))
+				d.runWorker(e.SequenceID)
+			case worker.NonRecoverableError:
+				d.logger.Debug("non-recoverable error", zap.String("message", e.Err.Error()))
 
-					return
-				default:
-				}
-			} else {
-				err := d.service.SetSequenceStateByID(res.SequenceID, sequence.StateDone)
+				err := d.service.SetSequenceErrorStateByID(e.SequenceID, e.Err)
 				if err != nil {
-					d.logger.Error("error occured while setting sequence done state", zap.Error(err))
-					return
+					d.logger.Error("error occured while setting sequence error state", zap.Error(err))
+					return err
 				}
+			case worker.FatalError:
+				d.logger.Debug("fatal error", zap.String("message", e.Err.Error()))
+
+				return e.Err
+			default:
+			}
+		case seqID := <-d.completedSequenceChan:
+			d.logger.Debug("got new completed sequence")
+
+			err := d.service.SetSequenceStateByID(seqID, sequence.StateDone)
+			if err != nil {
+				d.logger.Error("error occured while setting sequence done state", zap.Error(err))
+				return err
 			}
 		case <-ticker.C:
 			d.logger.Debug("next ticker tick")
 			hangingSequenceIds, err := d.service.GetHangingSequenceIds(d.sequenceTTL)
 			if err != nil {
 				d.logger.Error("error occured while getting hangins sequence ids", zap.Error(err))
-				return
+				return err
 			}
 
 			for _, seqID := range hangingSequenceIds {
@@ -98,7 +117,7 @@ func (d *dispatcherImpl) RunLoop() {
 				err := d.service.SetSequenceStateByID(seqID, sequence.StateProcessing)
 				if err != nil {
 					d.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
-					return
+					return err
 				}
 
 				d.runWorker(seqID)
@@ -110,9 +129,16 @@ func (d *dispatcherImpl) RunLoop() {
 }
 
 func (d *dispatcherImpl) runWorker(seqID int64) {
-	txProcessingTTL := int32(3000)
-	nHeights := int32(6)
-	waitForNextHeightDelay := int32(1000)
-	w := worker.New(d.service, d.nodeInteractor, d.resultsChan, txProcessingTTL, nHeights, waitForNextHeightDelay)
-	go w.Run(seqID)
+	w := worker.New(d.service, d.nodeInteractor, d.txProcessingTTL, d.heightsAfterLastTx, d.waitForNextHeightDelay)
+	go func(seqID int64) {
+		err := w.Run(seqID)
+		if err != nil {
+			d.errorsChan <- workerError{
+				Err:        err,
+				SequenceID: seqID,
+			}
+			return
+		}
+		d.completedSequenceChan <- seqID
+	}(seqID)
 }

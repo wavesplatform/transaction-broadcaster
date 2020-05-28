@@ -54,7 +54,7 @@
 
 1. `pending` - sequence is pending processing
 2. `processing` - sequence is being processed
-3. `done` - after last tx there is `BLOCKS_AFTER_LAST_TX` blocks in the blockchain
+3. `done` - after last tx there is `HEIGHTS_AFTER_LAST_TX` blocks in the blockchain
 4. `error` - check the `errorMessage` sequence field
 
 
@@ -75,6 +75,6 @@
 | 12 | `DISPATCHER_LOOP_DELAY` | number | 1000 | Number in ms - check for hanging sequences delay |
 | 13 | `DISPATCHER_SEQUENCE_TTL` | number | 5000 | Number in ms - in which time sequences in state `processing` were not updated and have to be reseted, and dispatcher will take them out |
 | 14 | `WORKER_TX_PROCESSING_TTL` | number | 3000 | Number in ms - after which time transactions in state `processing` were not updated and have to be retaken |
-| 15 | `WORKER_BLOCKS_AFTER_LAST_TX` | number | 6 | Number - after which blocks number sequence is considered as done |
+| 15 | `WORKER_HEIGHTS_AFTER_LAST_TX` | number | 6 | Number - after which blocks number sequence is considered as done |
 | 16 | `WORKER_WAIT_FOR_NEXT_HEIGHT_DELAY` | number | 1000 | Number in ms - the time after which worker checks the blockchain height again |
 

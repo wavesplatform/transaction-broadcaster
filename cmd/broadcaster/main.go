@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/go-pg/pg/v9"
 
@@ -15,8 +14,6 @@ import (
 	"github.com/waves-exchange/broadcaster/internal/node"
 	"github.com/waves-exchange/broadcaster/internal/sequence"
 )
-
-var wg sync.WaitGroup
 
 func main() {
 	cfg, cfgErr := config.Load()
@@ -44,12 +41,13 @@ func main() {
 
 	nodeInteractor := node.New(cfg.Node.NodeURL, cfg.Node.NodeAPIKey, cfg.Node.WaitForTxStatusDelay, cfg.Node.WaitForTxTimeout)
 
-	disp := dispatcher.New(service, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL)
+	disp := dispatcher.New(service, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
 
-	wg.Add(1)
 	go func() {
-		disp.RunLoop()
-		wg.Done()
+		err := disp.RunLoop()
+		if err != nil {
+			panic(err)
+		}
 	}()
 	logger.Info("dispatcher started")
 
@@ -61,6 +59,4 @@ func main() {
 	if runError != nil {
 		panic(runError)
 	}
-
-	wg.Wait()
 }
