@@ -4,8 +4,8 @@ import (
 	"github.com/caarlos0/env/v6"
 
 	"github.com/waves-exchange/broadcaster/internal/dispatcher"
+	"github.com/waves-exchange/broadcaster/internal/node"
 	"github.com/waves-exchange/broadcaster/internal/sequence"
-	"github.com/waves-exchange/broadcaster/internal/waves"
 	"github.com/waves-exchange/broadcaster/internal/worker"
 )
 
@@ -17,7 +17,7 @@ type Config struct {
 	Pg         sequence.PgConfig
 	Dispatcher dispatcher.Config
 	Worker     worker.Config
-	Waves      waves.Config
+	Node       node.Config
 }
 
 // Load returns config from environment variables
@@ -40,7 +40,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	if err := env.Parse(&c.Waves); err != nil {
+	if err := env.Parse(&c.Node); err != nil {
 		return nil, err
 	}
 

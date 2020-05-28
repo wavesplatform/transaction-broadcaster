@@ -3,9 +3,8 @@ package dispatcher
 import (
 	"time"
 
-	"github.com/waves-exchange/broadcaster/internal/waves"
-
 	"github.com/waves-exchange/broadcaster/internal/log"
+	"github.com/waves-exchange/broadcaster/internal/node"
 	"github.com/waves-exchange/broadcaster/internal/sequence"
 	"github.com/waves-exchange/broadcaster/internal/worker"
 	"go.uber.org/zap"
@@ -18,7 +17,7 @@ type Dispatcher interface {
 
 type dispatcherImpl struct {
 	service        sequence.Service
-	nodeInteractor waves.NodeInteractor
+	nodeInteractor node.Interactor
 	logger         *zap.Logger
 	sequenceChan   chan int64
 	resultsChan    chan worker.Result
@@ -26,8 +25,8 @@ type dispatcherImpl struct {
 	sequenceTTL    time.Duration
 }
 
-// Create creates new Dispatcher
-func Create(service sequence.Service, nodeInteractor waves.NodeInteractor, sequenceChan chan int64, loopDelay, sequenceTTL int64) Dispatcher {
+// New returns instance of Dispatcher interface implementation
+func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64) Dispatcher {
 	logger := log.Logger.Named("dispatcher")
 	resultsChan := make(chan worker.Result)
 
@@ -42,7 +41,7 @@ func Create(service sequence.Service, nodeInteractor waves.NodeInteractor, seque
 	}
 }
 
-// RunLoop starts dispatcher infinite loop listening sequenceChan for the next sequence to process
+// RunLoop starts dispatcher infinite work loop
 func (d *dispatcherImpl) RunLoop() {
 	ticker := time.NewTicker(d.loopDelay)
 	defer ticker.Stop()
@@ -51,7 +50,7 @@ func (d *dispatcherImpl) RunLoop() {
 		select {
 		case seqID := <-d.sequenceChan:
 			d.logger.Debug("got new sequence", zap.Int64("sequence_id", seqID))
-			err := d.service.SetSequenceStateByID(seqID, sequence.SequenceStateProcessing)
+			err := d.service.SetSequenceStateByID(seqID, sequence.StateProcessing)
 			if err != nil {
 				d.logger.Error("error occured while setting sequence processing state", zap.Error(err))
 				return
@@ -80,7 +79,7 @@ func (d *dispatcherImpl) RunLoop() {
 				default:
 				}
 			} else {
-				err := d.service.SetSequenceStateByID(res.SequenceID, sequence.SequenceStateDone)
+				err := d.service.SetSequenceStateByID(res.SequenceID, sequence.StateDone)
 				if err != nil {
 					d.logger.Error("error occured while setting sequence done state", zap.Error(err))
 					return
@@ -96,7 +95,7 @@ func (d *dispatcherImpl) RunLoop() {
 
 			for _, seqID := range hangingSequenceIds {
 				// refresh sequence status
-				err := d.service.SetSequenceStateByID(seqID, sequence.SequenceStateProcessing)
+				err := d.service.SetSequenceStateByID(seqID, sequence.StateProcessing)
 				if err != nil {
 					d.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
 					return
@@ -114,6 +113,6 @@ func (d *dispatcherImpl) runWorker(seqID int64) {
 	txProcessingTTL := int32(3000)
 	nHeights := int32(6)
 	waitForNextHeightDelay := int32(1000)
-	w := worker.NewWorker(d.service, d.nodeInteractor, d.resultsChan, txProcessingTTL, nHeights, waitForNextHeightDelay)
+	w := worker.New(d.service, d.nodeInteractor, d.resultsChan, txProcessingTTL, nHeights, waitForNextHeightDelay)
 	go w.Run(seqID)
 }

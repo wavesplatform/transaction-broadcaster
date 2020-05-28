@@ -53,9 +53,9 @@
 ## Sequence states
 
 1. `pending` - sequence is pending processing
-2. `processing` - sequence is under processing
+2. `processing` - sequence is being processed
 3. `done` - after last tx there is `BLOCKS_AFTER_LAST_TX` blocks in the blockchain
-4. `error` - check the `error message` sequence field
+4. `error` - check the `errorMessage` sequence field
 
 
 ## Service environment variables

@@ -1,4 +1,4 @@
-package waves
+package node
 
 import (
 	"bytes"
@@ -67,8 +67,8 @@ const (
 // Availability represents map of string:isTransactionAvailable (tx has status not TransactionStatusNotFound)
 type Availability map[string]bool
 
-// NodeInteractor ...
-type NodeInteractor interface {
+// Interactor ...
+type Interactor interface {
 	ValidateTx(string) (*ValidationResult, Error)
 	BroadcastTx(string) (string, Error)
 	WaitForTxStatus(string, TransactionStatus) (int32, Error)
@@ -90,8 +90,8 @@ const (
 	errorWaitForTxStatusTimeoutMessage = "Wait for tx status time deadline is reached."
 )
 
-// NewNodeInteractor returns instance of NodeInteractor interface implementation
-func NewNodeInteractor(nodeURL url.URL, nodeAPIKey string, waitForTxStatusDelay, waitForTxTimeout int32) NodeInteractor {
+// New returns instance of Interactor interface implementation
+func New(nodeURL url.URL, nodeAPIKey string, waitForTxStatusDelay, waitForTxTimeout int32) Interactor {
 	logger := log.Logger.Named("nodeInteractor")
 
 	return &impl{
@@ -110,7 +110,7 @@ func (r *impl) GetCurrentHeight() (int32, Error) {
 
 	resp, err := http.Get(blocksHeightURL.String())
 	if err != nil {
-		return 0, NewWavesError(InternalError, err.Error())
+		return 0, NewError(InternalError, err.Error())
 	}
 
 	if resp != nil {
@@ -120,7 +120,7 @@ func (r *impl) GetCurrentHeight() (int32, Error) {
 	blocksHeight := blocksHeightResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&blocksHeight)
 	if err != nil {
-		return 0, NewWavesError(InternalError, err.Error())
+		return 0, NewError(InternalError, err.Error())
 	}
 	return blocksHeight.Height, nil
 }
@@ -133,7 +133,7 @@ func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 	req, err := http.NewRequest("POST", validateURL.String(), strings.NewReader(tx))
 	if err != nil {
 		r.logger.Error("Cannot create validateTx request", zap.Error(err))
-		return nil, NewWavesError(InternalError, err.Error())
+		return nil, NewError(InternalError, err.Error())
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -141,7 +141,7 @@ func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, NewWavesError(InternalError, err.Error())
+		return nil, NewError(InternalError, err.Error())
 	}
 
 	if resp != nil {
@@ -152,7 +152,7 @@ func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 		validateTx := validateTxResponse{}
 		err = json.NewDecoder(resp.Body).Decode(&validateTx)
 		if err != nil {
-			return nil, NewWavesError(InternalError, err.Error())
+			return nil, NewError(InternalError, err.Error())
 		}
 
 		return &ValidationResult{
@@ -164,7 +164,7 @@ func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 	validateTxError := errorResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&validateTxError)
 	if err != nil {
-		return nil, NewWavesError(InternalError, err.Error())
+		return nil, NewError(InternalError, err.Error())
 	}
 
 	return &ValidationResult{
@@ -180,7 +180,7 @@ func (r *impl) BroadcastTx(tx string) (string, Error) {
 
 	resp, err := http.Post(broadcastURL.String(), "application/json", strings.NewReader(tx))
 	if err != nil {
-		return "", NewWavesError(InternalError, err.Error())
+		return "", NewError(InternalError, err.Error())
 	}
 
 	if resp != nil {
@@ -193,7 +193,7 @@ func (r *impl) BroadcastTx(tx string) (string, Error) {
 			reader := strings.NewReader(tx)
 			err = json.NewDecoder(reader).Decode(&t)
 			if err != nil {
-				return "", NewWavesError(InternalError, err.Error())
+				return "", NewError(InternalError, err.Error())
 			}
 
 			txStatus, wavesErr := r.getTxStatus(t.id)
@@ -208,19 +208,19 @@ func (r *impl) BroadcastTx(tx string) (string, Error) {
 			var errorResponseDto errorResponse
 			err = json.NewDecoder(resp.Body).Decode(&errorResponseDto)
 			if err != nil {
-				return "", NewWavesError(InternalError, err.Error())
+				return "", NewError(InternalError, err.Error())
 			}
 
-			return "", NewWavesError(BroadcastClientError, errorResponseDto.Message)
+			return "", NewError(BroadcastClientError, errorResponseDto.Message)
 		}
 
-		return "", NewWavesError(BroadcastServerError, resp.Status)
+		return "", NewError(BroadcastServerError, resp.Status)
 	}
 
 	var broadcastResponseDto broadcastResponse
 	err = json.NewDecoder(resp.Body).Decode(&broadcastResponseDto)
 	if err != nil {
-		return "", NewWavesError(InternalError, err.Error())
+		return "", NewError(InternalError, err.Error())
 	}
 
 	return broadcastResponseDto.ID, nil
@@ -241,7 +241,7 @@ func (r *impl) WaitForTxStatus(txID string, waitForStatus TransactionStatus) (in
 
 		now := time.Now()
 		if now.Sub(start) > r.waitForTxTimeout {
-			return 0, NewWavesError(WaitForTxStatusTimeoutError, errorWaitForTxStatusTimeoutMessage)
+			return 0, NewError(WaitForTxStatusTimeoutError, errorWaitForTxStatusTimeoutMessage)
 		}
 
 		time.Sleep(r.waitForTxStatusDelay)
@@ -260,7 +260,7 @@ func (r *impl) WaitForNHeights(nHeights int32) Error {
 	for range ticker.C {
 		newHeight, err = r.GetCurrentHeight()
 		if err != nil {
-			return NewWavesError(InternalError, err.Error())
+			return NewError(InternalError, err.Error())
 		}
 
 		if newHeight > currentHeight+nHeights {
@@ -285,12 +285,12 @@ func (r *impl) GetTxsAvailability(txIDs []string) (Availability, Error) {
 		IDs: txIDs,
 	})
 	if err != nil {
-		return nil, NewWavesError(InternalError, err.Error())
+		return nil, NewError(InternalError, err.Error())
 	}
 
 	resp, err := http.Post(txsStatusURL.String(), "application/json", bytes.NewBuffer(req))
 	if err != nil {
-		return nil, NewWavesError(InternalError, err.Error())
+		return nil, NewError(InternalError, err.Error())
 	}
 
 	if resp != nil {
@@ -301,15 +301,15 @@ func (r *impl) GetTxsAvailability(txIDs []string) (Availability, Error) {
 		errorResponseDto := errorResponse{}
 		err = json.NewDecoder(resp.Body).Decode(&errorResponseDto)
 		if err != nil {
-			return nil, NewWavesError(InternalError, err.Error())
+			return nil, NewError(InternalError, err.Error())
 		}
-		return nil, NewWavesError(InternalError, errorResponseDto.Message)
+		return nil, NewError(InternalError, errorResponseDto.Message)
 	}
 
 	txStatuses := transactionsStatusResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&txStatuses)
 	if err != nil {
-		return nil, NewWavesError(InternalError, err.Error())
+		return nil, NewError(InternalError, err.Error())
 	}
 
 	availability := Availability{}
@@ -330,7 +330,7 @@ func (r *impl) getTxStatus(txID string) (*transactionStatusResponse, Error) {
 
 	resp, err := http.Get(txStatusURL.String())
 	if err != nil {
-		return nil, NewWavesError(InternalError, err.Error())
+		return nil, NewError(InternalError, err.Error())
 	}
 
 	if resp != nil {
@@ -338,13 +338,13 @@ func (r *impl) getTxStatus(txID string) (*transactionStatusResponse, Error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, NewWavesError(GetTxStatusError, resp.Status)
+		return nil, NewError(GetTxStatusError, resp.Status)
 	}
 
 	txStatus := transactionsStatusResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&txStatus)
 	if err != nil {
-		return nil, NewWavesError(InternalError, err.Error())
+		return nil, NewError(InternalError, err.Error())
 	}
 
 	return &txStatus[0], nil

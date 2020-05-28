@@ -1,8 +1,8 @@
-package waves
+package node
 
 import "net/url"
 
-// Config of the waves package
+// Config of the node package
 type Config struct {
 	NodeURL              url.URL `env:"WAVES_NODE_URL,required"`
 	NodeAPIKey           string  `env:"WAVES_NODE_API_KEY,required"`

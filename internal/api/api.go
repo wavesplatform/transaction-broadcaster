@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/waves-exchange/broadcaster/internal/waves"
-
 	"github.com/waves-exchange/broadcaster/internal/log"
+	"github.com/waves-exchange/broadcaster/internal/node"
 	"github.com/waves-exchange/broadcaster/internal/sequence"
 	"go.uber.org/zap"
 
@@ -55,15 +54,15 @@ func createErrorRenderer(logger *zap.Logger) func(*gin.Context, int, Error) {
 	return func(ctx *gin.Context, status int, err Error) {
 		logger.Warn("rendering http error",
 			zap.Int("status", status),
-			zap.String("err", err.Message()),
+			zap.Error(err),
 		)
 
 		ctx.JSON(status, SingleHTTPError(err))
 	}
 }
 
-// Create ...
-func Create(service sequence.Service, nodeInteractor waves.NodeInteractor, sequenceChan chan<- int64) *gin.Engine {
+// New ...
+func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan chan<- int64) *gin.Engine {
 	logger := log.Logger.Named("server.requestHandler")
 
 	renderError := createErrorRenderer(logger)

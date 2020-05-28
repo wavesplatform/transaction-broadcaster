@@ -1,5 +1,9 @@
 package api
 
+import (
+	"fmt"
+)
+
 const (
 	// validation errors
 	missingRequiredParameter = 10200
@@ -15,8 +19,9 @@ type apiErrorImpl struct {
 	details map[string]string // at this moment there is only string at the value type
 }
 
-// Error represents api error
+// Error represents API error
 type Error interface {
+	Error() string
 	Message() string
 	Details() map[string]string
 	Code() uint16
@@ -34,12 +39,17 @@ type HTTPErrors struct {
 	Errors []HTTPError `json:"errors"`
 }
 
+// NewError returns instance of Error interface implementation
+func NewError(code uint16, details map[string]string) Error {
+	return &apiErrorImpl{code: code, details: details}
+}
+
 // MissingRequiredParameter ...
 func MissingRequiredParameter(parameterName string) Error {
 	details := map[string]string{
 		"parameter": parameterName,
 	}
-	return &apiErrorImpl{code: missingRequiredParameter, details: details}
+	return NewError(missingRequiredParameter, details)
 }
 
 // InvalidParameterValue ...
@@ -48,12 +58,12 @@ func InvalidParameterValue(parameterName string, reason string) Error {
 		"parameter": parameterName,
 		"reason":    reason,
 	}
-	return &apiErrorImpl{code: invalidParameterValue, details: details}
+	return NewError(invalidParameterValue, details)
 }
 
 // InternalServerError ...
 func InternalServerError() Error {
-	return &apiErrorImpl{code: internalServerError, details: nil}
+	return NewError(internalServerError, nil)
 }
 
 // SingleHTTPError returns HTTPErrors build from single HTTPError
@@ -65,6 +75,11 @@ func SingleHTTPError(err Error) HTTPErrors {
 			Details: err.Details(),
 		}},
 	}
+}
+
+// Error
+func (err *apiErrorImpl) Error() string {
+	return fmt.Sprintf("API Error: %s [%d]", err.Message(), err.Code())
 }
 
 // Message ...

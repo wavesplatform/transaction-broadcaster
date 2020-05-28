@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/waves-exchange/broadcaster/internal/log"
+	"github.com/waves-exchange/broadcaster/internal/node"
 	"github.com/waves-exchange/broadcaster/internal/sequence"
-	"github.com/waves-exchange/broadcaster/internal/waves"
 	"go.uber.org/zap"
 )
 
@@ -17,7 +17,7 @@ type Worker interface {
 
 type workerImpl struct {
 	service                sequence.Service
-	nodeInteractor         waves.NodeInteractor
+	nodeInteractor         node.Interactor
 	logger                 *zap.Logger
 	resultsChan            chan<- Result
 	txProcessingTTL        time.Duration
@@ -25,8 +25,8 @@ type workerImpl struct {
 	waitForNextHeightDelay time.Duration
 }
 
-// NewWorker returns instance of Worker interface implementation
-func NewWorker(service sequence.Service, nodeInteractor waves.NodeInteractor, resultsChan chan<- Result, txProcessingTTL, blocksAfterLastTx, waitForNextHeightDelay int32) Worker {
+// New returns instance of Worker interface implementation
+func New(service sequence.Service, nodeInteractor node.Interactor, resultsChan chan<- Result, txProcessingTTL, blocksAfterLastTx, waitForNextHeightDelay int32) Worker {
 	logger := log.Logger.Named("worker")
 
 	return &workerImpl{
@@ -180,7 +180,7 @@ func (w *workerImpl) processTx(tx *sequence.SequenceTx, isFirstTry bool) error {
 
 		_, wavesErr := w.nodeInteractor.BroadcastTx(tx.Tx)
 		if wavesErr != nil {
-			if wavesErr.Code() == waves.BroadcastClientError {
+			if wavesErr.Code() == node.BroadcastClientError {
 				w.logger.Error("error occurred while setting sequence error state", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
 				return NewNonRecoverableError(wavesErr.Error())
 			}
@@ -198,7 +198,7 @@ func (w *workerImpl) processTx(tx *sequence.SequenceTx, isFirstTry bool) error {
 	case sequence.TransactionStateUnconfirmed:
 		w.logger.Debug("wait for tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
 
-		height, wavesErr := w.nodeInteractor.WaitForTxStatus(tx.ID, waves.TransactionStatusConfirmed)
+		height, wavesErr := w.nodeInteractor.WaitForTxStatus(tx.ID, node.TransactionStatusConfirmed)
 		if wavesErr != nil {
 			return NewRecoverableError(wavesErr.Error())
 		}
@@ -246,7 +246,7 @@ func (w *workerImpl) waitNHeightsAfterLastTx(seqID int64, confirmedTxs map[strin
 
 	for range ticker.C {
 		// refresh sequence status
-		err := w.service.SetSequenceStateByID(seqID, sequence.SequenceStateProcessing)
+		err := w.service.SetSequenceStateByID(seqID, sequence.StateProcessing)
 		if err != nil {
 			w.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
 			return NewFatalError(err.Error())

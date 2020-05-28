@@ -1,4 +1,4 @@
-package waves
+package node
 
 // Waves error codes
 const (
@@ -20,8 +20,8 @@ type Error interface {
 	Code() uint16
 }
 
-// NewWavesError creates new waves error
-func NewWavesError(code uint16, message string) Error {
+// NewError creates new error
+func NewError(code uint16, message string) Error {
 	return wavesErrorImpl{
 		code:    code,
 		message: message,
