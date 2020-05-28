@@ -5,7 +5,7 @@ import (
 
 	"github.com/waves-exchange/broadcaster/internal/log"
 	"github.com/waves-exchange/broadcaster/internal/node"
-	"github.com/waves-exchange/broadcaster/internal/sequence"
+	"github.com/waves-exchange/broadcaster/internal/repository"
 	"github.com/waves-exchange/broadcaster/internal/worker"
 	"go.uber.org/zap"
 )
@@ -25,7 +25,7 @@ type Dispatcher interface {
 }
 
 type dispatcherImpl struct {
-	service                             sequence.Service
+	repo                                repository.Repository
 	nodeInteractor                      node.Interactor
 	logger                              *zap.Logger
 	sequenceChan, completedSequenceChan chan int64
@@ -37,13 +37,13 @@ type dispatcherImpl struct {
 }
 
 // New returns instance of Dispatcher interface implementation
-func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
+func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
 	logger := log.Logger.Named("dispatcher")
 	completedSequenceChan := make(chan int64)
 	errorsChan := make(chan workerError)
 
 	return &dispatcherImpl{
-		service:               service,
+		repo:                  repo,
 		nodeInteractor:        nodeInteractor,
 		logger:                logger,
 		sequenceChan:          sequenceChan,
@@ -68,7 +68,7 @@ func (d *dispatcherImpl) RunLoop() error {
 		case seqID := <-d.sequenceChan:
 			d.logger.Debug("got new sequence", zap.Int64("sequence_id", seqID))
 
-			err := d.service.SetSequenceStateByID(seqID, sequence.StateProcessing)
+			err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing)
 			if err != nil {
 				d.logger.Error("error occured while setting sequence processing state", zap.Error(err))
 				return err
@@ -85,7 +85,7 @@ func (d *dispatcherImpl) RunLoop() error {
 			case worker.NonRecoverableError:
 				d.logger.Debug("non-recoverable error", zap.String("message", e.Err.Error()))
 
-				err := d.service.SetSequenceErrorStateByID(e.SequenceID, e.Err)
+				err := d.repo.SetSequenceErrorStateByID(e.SequenceID, e.Err)
 				if err != nil {
 					d.logger.Error("error occured while setting sequence error state", zap.Error(err))
 					return err
@@ -99,14 +99,14 @@ func (d *dispatcherImpl) RunLoop() error {
 		case seqID := <-d.completedSequenceChan:
 			d.logger.Debug("got new completed sequence")
 
-			err := d.service.SetSequenceStateByID(seqID, sequence.StateDone)
+			err := d.repo.SetSequenceStateByID(seqID, repository.StateDone)
 			if err != nil {
 				d.logger.Error("error occured while setting sequence done state", zap.Error(err))
 				return err
 			}
 		case <-ticker.C:
 			d.logger.Debug("next ticker tick")
-			hangingSequenceIds, err := d.service.GetHangingSequenceIds(d.sequenceTTL)
+			hangingSequenceIds, err := d.repo.GetHangingSequenceIds(d.sequenceTTL)
 			if err != nil {
 				d.logger.Error("error occured while getting hangins sequence ids", zap.Error(err))
 				return err
@@ -114,7 +114,7 @@ func (d *dispatcherImpl) RunLoop() error {
 
 			for _, seqID := range hangingSequenceIds {
 				// refresh sequence status
-				err := d.service.SetSequenceStateByID(seqID, sequence.StateProcessing)
+				err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing)
 				if err != nil {
 					d.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
 					return err
@@ -129,7 +129,7 @@ func (d *dispatcherImpl) RunLoop() error {
 }
 
 func (d *dispatcherImpl) runWorker(seqID int64) {
-	w := worker.New(d.service, d.nodeInteractor, d.txProcessingTTL, d.heightsAfterLastTx, d.waitForNextHeightDelay)
+	w := worker.New(d.repo, d.nodeInteractor, d.txProcessingTTL, d.heightsAfterLastTx, d.waitForNextHeightDelay)
 	go func(seqID int64) {
 		err := w.Run(seqID)
 		if err != nil {

@@ -11,7 +11,7 @@ import (
 
 	"github.com/waves-exchange/broadcaster/internal/log"
 	"github.com/waves-exchange/broadcaster/internal/node"
-	"github.com/waves-exchange/broadcaster/internal/sequence"
+	"github.com/waves-exchange/broadcaster/internal/repository"
 	"go.uber.org/zap"
 
 	"github.com/gin-gonic/gin"
@@ -62,7 +62,7 @@ func createErrorRenderer(logger *zap.Logger) func(*gin.Context, int, Error) {
 }
 
 // New ...
-func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan chan<- int64) *gin.Engine {
+func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan<- int64) *gin.Engine {
 	logger := log.Logger.Named("server.requestHandler")
 
 	renderError := createErrorRenderer(logger)
@@ -87,7 +87,7 @@ func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan 
 			return
 		}
 
-		sequence, err := service.GetSequenceByID(id)
+		sequence, err := repo.GetSequenceByID(id)
 		if err != nil {
 			logger.Error("cannot get sequence from db", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
 			renderError(c, http.StatusInternalServerError, InternalServerError())
@@ -135,7 +135,7 @@ func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan 
 			return
 		}
 
-		txs := []sequence.TxWithIDDto{}
+		txs := []repository.TxWithIDDto{}
 		var t txDto
 		for _, tx := range req.Txs {
 			err := json.NewDecoder(strings.NewReader(tx)).Decode(&t)
@@ -144,12 +144,12 @@ func New(service sequence.Service, nodeInteractor node.Interactor, sequenceChan 
 				renderError(c, http.StatusInternalServerError, InternalServerError())
 				return
 			}
-			txs = append(txs, sequence.TxWithIDDto{
+			txs = append(txs, repository.TxWithIDDto{
 				ID: t.ID,
 				Tx: tx,
 			})
 		}
-		sequenceID, err := service.CreateSequence(txs)
+		sequenceID, err := repo.CreateSequence(txs)
 		if err != nil {
 			logger.Error("cannot create sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
 			renderError(c, http.StatusInternalServerError, InternalServerError())

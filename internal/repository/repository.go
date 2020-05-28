@@ -1,4 +1,4 @@
-package sequence
+package repository
 
 import (
 	"encoding/json"
@@ -165,8 +165,8 @@ type TxWithIDDto struct {
 	Tx string
 }
 
-// Service ...
-type Service interface {
+// Repository ...
+type Repository interface {
 	GetSequenceByID(id int64) (*Sequence, error)
 	GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error)
 	GetHangingSequenceIds(ttl time.Duration) ([]int64, error)
@@ -179,16 +179,16 @@ type Service interface {
 	SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error
 }
 
-type serviceImpl struct {
+type repoImpl struct {
 	Conn *pg.DB
 }
 
-// NewService returns instance of Service interface implementation
-func NewService(db *pg.DB) Service {
-	return &serviceImpl{Conn: db}
+// New returns instance of Repository interface implementation
+func New(db *pg.DB) Repository {
+	return &repoImpl{Conn: db}
 }
 
-func (s *serviceImpl) GetSequenceByID(sequenceID int64) (*Sequence, error) {
+func (s *repoImpl) GetSequenceByID(sequenceID int64) (*Sequence, error) {
 	var seqDto sequenceModel
 
 	_, err := s.Conn.QueryOne(&seqDto, "select id, state, error_message, created_at, updated_at, coalesce((select count(*) from sequences_txs where sequence_id=?0 and state=?1), 0) as broadcasted_count, (select count(*) from sequences_txs where sequence_id=?0) as total_count from sequences where id=?0", sequenceID, TransactionStateConfirmed)
@@ -211,7 +211,7 @@ func (s *serviceImpl) GetSequenceByID(sequenceID int64) (*Sequence, error) {
 	return &seq, nil
 }
 
-func (s *serviceImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error) {
+func (s *repoImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error) {
 	var txsDto []*sequenceTxModel
 
 	_, err := s.Conn.Query(&txsDto, "select tx_id as id, sequence_id, state, height, error_message, position_in_sequence, tx, created_at, updated_at from sequences_txs where sequence_id=?0", sequenceID)
@@ -239,7 +239,7 @@ func (s *serviceImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error
 
 // GetHangingSequenceIds tries to get hanging sequence ids
 // Hanging sequences - with state=processing and not updated for ttl.
-func (s *serviceImpl) GetHangingSequenceIds(ttl time.Duration) ([]int64, error) {
+func (s *repoImpl) GetHangingSequenceIds(ttl time.Duration) ([]int64, error) {
 	ids := []int64{}
 
 	_, err := s.Conn.Query(&ids, "select s.id from sequences s where state=?0 and updated_at < NOW() - interval '?1 seconds' order by id asc", StateProcessing, ttl.Seconds())
@@ -250,7 +250,7 @@ func (s *serviceImpl) GetHangingSequenceIds(ttl time.Duration) ([]int64, error) 
 	return ids, nil
 }
 
-func (s *serviceImpl) CreateSequence(txs []TxWithIDDto) (int64, error) {
+func (s *repoImpl) CreateSequence(txs []TxWithIDDto) (int64, error) {
 	var sequenceID int64
 
 	err := s.Conn.RunInTransaction(func(tr *pg.Tx) error {
@@ -277,32 +277,32 @@ func (s *serviceImpl) CreateSequence(txs []TxWithIDDto) (int64, error) {
 	return sequenceID, nil
 }
 
-func (s *serviceImpl) SetSequenceStateByID(sequenceID int64, newState State) error {
+func (s *repoImpl) SetSequenceStateByID(sequenceID int64, newState State) error {
 	_, err := s.Conn.Exec("update sequences set state=?1, updated_at=NOW() where id=?0", sequenceID, newState)
 	return err
 }
 
-func (s *serviceImpl) SetSequenceErrorStateByID(sequenceID int64, e error) error {
+func (s *repoImpl) SetSequenceErrorStateByID(sequenceID int64, e error) error {
 	_, err := s.Conn.Exec("update sequences set state=?0, error_message=?1, updated_at=NOW() where id=?2", StateError, e.Error(), sequenceID)
 	return err
 }
 
-func (s *serviceImpl) SetSequenceTxState(tx *SequenceTx, newState TransactionState) error {
+func (s *repoImpl) SetSequenceTxState(tx *SequenceTx, newState TransactionState) error {
 	_, err := s.Conn.Exec("update sequences_txs set state=?0, updated_at=NOW() where sequence_id=?1 and tx_id=?2", newState, tx.SequenceID, tx.ID)
 	return err
 }
 
-func (s *serviceImpl) SetSequenceTxConfirmedState(tx *SequenceTx, height int32) error {
+func (s *repoImpl) SetSequenceTxConfirmedState(tx *SequenceTx, height int32) error {
 	_, err := s.Conn.Exec("update sequences_txs set state=?0, height=?1, updated_at=NOW() where sequence_id=?2 and tx_id=?3", TransactionStateConfirmed, height, tx.SequenceID, tx.ID)
 	return err
 }
 
-func (s *serviceImpl) SetSequenceTxErrorState(tx *SequenceTx, errorMessage string) error {
+func (s *repoImpl) SetSequenceTxErrorState(tx *SequenceTx, errorMessage string) error {
 	_, err := s.Conn.Exec("update sequences_txs set state=?0, error_message=?1, updated_at=NOW() where sequence_id=?2 and tx_id=?3", TransactionStateError, errorMessage, tx.SequenceID, tx.ID)
 	return err
 }
 
-func (s *serviceImpl) SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error {
+func (s *repoImpl) SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error {
 	_, err := s.Conn.Exec("update sequences_txs set state=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence>=(select position_in_sequence from sequences_txs where sequence_id=?1 and tx_id=?2)", newState, sequenceID, txID)
 	return err
 }

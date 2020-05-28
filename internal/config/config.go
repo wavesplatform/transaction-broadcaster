@@ -5,16 +5,16 @@ import (
 
 	"github.com/waves-exchange/broadcaster/internal/dispatcher"
 	"github.com/waves-exchange/broadcaster/internal/node"
-	"github.com/waves-exchange/broadcaster/internal/sequence"
+	"github.com/waves-exchange/broadcaster/internal/repository"
 	"github.com/waves-exchange/broadcaster/internal/worker"
 )
 
-// Config of the service
+// Config of the app
 type Config struct {
 	Port int  `env:"PORT" envDefault:"3000"`
 	Dev  bool `env:"DEV" envDefault:"false"`
 
-	Pg         sequence.PgConfig
+	Pg         repository.PgConfig
 	Dispatcher dispatcher.Config
 	Worker     worker.Config
 	Node       node.Config

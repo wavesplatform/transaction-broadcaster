@@ -12,7 +12,7 @@ import (
 	"github.com/waves-exchange/broadcaster/internal/dispatcher"
 	"github.com/waves-exchange/broadcaster/internal/log"
 	"github.com/waves-exchange/broadcaster/internal/node"
-	"github.com/waves-exchange/broadcaster/internal/sequence"
+	"github.com/waves-exchange/broadcaster/internal/repository"
 )
 
 func main() {
@@ -35,13 +35,13 @@ func main() {
 		Password: cfg.Pg.Password,
 	})
 
-	service := sequence.NewService(db)
+	repo := repository.New(db)
 
 	sequenceChan := make(chan int64)
 
 	nodeInteractor := node.New(cfg.Node.NodeURL, cfg.Node.NodeAPIKey, cfg.Node.WaitForTxStatusDelay, cfg.Node.WaitForTxTimeout)
 
-	disp := dispatcher.New(service, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
+	disp := dispatcher.New(repo, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
 
 	go func() {
 		err := disp.RunLoop()
@@ -51,7 +51,7 @@ func main() {
 	}()
 	logger.Info("dispatcher started")
 
-	s := api.New(service, nodeInteractor, sequenceChan)
+	s := api.New(repo, nodeInteractor, sequenceChan)
 	addr := fmt.Sprintf(":%d", cfg.Port)
 
 	logger.Info("starting REST API server", zap.Int("port", cfg.Port))
