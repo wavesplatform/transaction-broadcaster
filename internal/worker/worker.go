@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/waves-exchange/broadcaster/internal/log"
-	"github.com/waves-exchange/broadcaster/internal/node"
-	"github.com/waves-exchange/broadcaster/internal/repository"
+	"github.com/wavesplatform/transaction-broadcaster/internal/log"
+	"github.com/wavesplatform/transaction-broadcaster/internal/node"
+	"github.com/wavesplatform/transaction-broadcaster/internal/repository"
 	"go.uber.org/zap"
 )
 

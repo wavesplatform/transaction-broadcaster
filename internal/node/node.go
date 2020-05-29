@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/waves-exchange/broadcaster/internal/log"
+	"github.com/wavesplatform/transaction-broadcaster/internal/log"
 	"go.uber.org/zap"
 )
 

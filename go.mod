@@ -1,4 +1,4 @@
-module github.com/waves-exchange/broadcaster
+module github.com/wavesplatform/transaction-broadcaster
 
 go 1.14
 

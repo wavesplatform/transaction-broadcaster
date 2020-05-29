@@ -7,12 +7,12 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/waves-exchange/broadcaster/internal/api"
-	"github.com/waves-exchange/broadcaster/internal/config"
-	"github.com/waves-exchange/broadcaster/internal/dispatcher"
-	"github.com/waves-exchange/broadcaster/internal/log"
-	"github.com/waves-exchange/broadcaster/internal/node"
-	"github.com/waves-exchange/broadcaster/internal/repository"
+	"github.com/wavesplatform/transaction-broadcaster/internal/api"
+	"github.com/wavesplatform/transaction-broadcaster/internal/config"
+	"github.com/wavesplatform/transaction-broadcaster/internal/dispatcher"
+	"github.com/wavesplatform/transaction-broadcaster/internal/log"
+	"github.com/wavesplatform/transaction-broadcaster/internal/node"
+	"github.com/wavesplatform/transaction-broadcaster/internal/repository"
 )
 
 func main() {
