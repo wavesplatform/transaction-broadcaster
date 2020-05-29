@@ -50,7 +50,7 @@ func (w *workerImpl) Run(sequenceID int64) error {
 
 	w.logger.Debug("going to process txs", zap.Int("txs_count", len(txs)))
 
-	confirmedTxs := map[string]*repository.SequenceTx{}
+	var confirmedTxs = make(map[string]*repository.SequenceTx)
 
 	for _, tx := range txs {
 		if tx.State == repository.TransactionStateConfirmed {
@@ -59,7 +59,7 @@ func (w *workerImpl) Run(sequenceID int64) error {
 		}
 
 		if len(confirmedTxs) > 0 {
-			confirmedTxIDs := []string{}
+			var confirmedTxIDs []string
 			for txID := range confirmedTxs {
 				confirmedTxIDs = append(confirmedTxIDs, txID)
 			}
@@ -74,8 +74,7 @@ func (w *workerImpl) Run(sequenceID int64) error {
 				if !isAvailable {
 					w.logger.Debug("one of confirmed tx was pulled out", zap.Int64("sequence_id", sequenceID), zap.String("tx_id", txID))
 
-					err := w.repo.SetSequenceTxsStateAfter(sequenceID, txID, repository.TransactionStatePending)
-					if err != nil {
+					if err := w.repo.SetSequenceTxsStateAfter(sequenceID, txID, repository.TransactionStatePending); err != nil {
 						w.logger.Error("error occured while setting txs pending state", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("after_tx_id", txID))
 						return NewFatalError(err.Error())
 					}
@@ -87,8 +86,7 @@ func (w *workerImpl) Run(sequenceID int64) error {
 
 		switch tx.State {
 		case repository.TransactionStatePending:
-			err := w.processTx(tx, true)
-			if err != nil {
+			if err := w.processTx(tx, true); err != nil {
 				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
 				return err
 			}
@@ -100,8 +98,7 @@ func (w *workerImpl) Run(sequenceID int64) error {
 			}
 
 		case repository.TransactionStateUnconfirmed:
-			err := w.processTx(tx, true)
-			if err != nil {
+			if err := w.processTx(tx, true); err != nil {
 				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
 				return err
 			}
@@ -112,7 +109,7 @@ func (w *workerImpl) Run(sequenceID int64) error {
 	}
 
 	startHeight := int32(0)
-	confirmedTxIDs := []string{}
+	var confirmedTxIDs []string
 	for txID, tx := range confirmedTxs {
 		if startHeight < tx.Height {
 			startHeight = tx.Height
@@ -122,8 +119,7 @@ func (w *workerImpl) Run(sequenceID int64) error {
 
 	targetHeight := startHeight + w.heightsAfterLastTx
 
-	err = w.waitForTargetHeight(targetHeight, sequenceID, confirmedTxIDs)
-	if err != nil {
+	if err = w.waitForTargetHeight(targetHeight, sequenceID, confirmedTxIDs); err != nil {
 		return err
 	}
 
@@ -135,8 +131,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error
 	case repository.TransactionStatePending:
 		w.logger.Debug("process tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
 
-		err := w.repo.SetSequenceTxState(tx, repository.TransactionStateProcessing)
-		if err != nil {
+		if err := w.repo.SetSequenceTxState(tx, repository.TransactionStateProcessing); err != nil {
 			return NewFatalError(err.Error())
 		}
 		fallthrough
@@ -158,8 +153,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error
 				return w.processTx(tx, false)
 			}
 
-			err := w.repo.SetSequenceTxErrorState(tx, validationResult.ErrorMessage)
-			if err != nil {
+			if err := w.repo.SetSequenceTxErrorState(tx, validationResult.ErrorMessage); err != nil {
 				w.logger.Error("error occured while setting tx error state", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
 				return NewFatalError(err.Error())
 			}
@@ -167,8 +161,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error
 			return NewNonRecoverableError(fmt.Sprintf("tx %s is invalid", tx.ID))
 		}
 
-		err := w.repo.SetSequenceTxState(tx, repository.TransactionStateValidated)
-		if err != nil {
+		if err := w.repo.SetSequenceTxState(tx, repository.TransactionStateValidated); err != nil {
 			return NewFatalError(err.Error())
 		}
 
@@ -187,8 +180,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error
 			return NewRecoverableError(wavesErr.Error())
 		}
 
-		err := w.repo.SetSequenceTxState(tx, repository.TransactionStateUnconfirmed)
-		if err != nil {
+		if err := w.repo.SetSequenceTxState(tx, repository.TransactionStateUnconfirmed); err != nil {
 			return NewFatalError(err.Error())
 		}
 
@@ -201,8 +193,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error
 			return NewRecoverableError(wavesErr.Error())
 		}
 
-		err := w.repo.SetSequenceTxConfirmedState(tx, height)
-		if err != nil {
+		if err := w.repo.SetSequenceTxConfirmedState(tx, height); err != nil {
 			return NewFatalError(err.Error())
 		}
 
@@ -235,8 +226,7 @@ func (w *workerImpl) waitForTargetHeight(targetHeight int32, seqID int64, confir
 
 	for range ticker.C {
 		// refresh sequence status
-		err := w.repo.SetSequenceStateByID(seqID, repository.StateProcessing)
-		if err != nil {
+		if err := w.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
 			w.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
 			return NewFatalError(err.Error())
 		}
@@ -251,8 +241,7 @@ func (w *workerImpl) waitForTargetHeight(targetHeight int32, seqID int64, confir
 			if !isAvailable {
 				w.logger.Debug("one of confirmed tx was pulled out", zap.String("tx_id", txID))
 
-				err := w.repo.SetSequenceTxsStateAfter(seqID, txID, repository.TransactionStatePending)
-				if err != nil {
+				if err := w.repo.SetSequenceTxsStateAfter(seqID, txID, repository.TransactionStatePending); err != nil {
 					w.logger.Error("error occured while setting txs pending state", zap.Error(err), zap.Int64("sequence_id", seqID), zap.String("after_tx_id", txID))
 					return NewFatalError(err.Error())
 				}

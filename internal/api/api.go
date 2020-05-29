@@ -104,9 +104,8 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 		c.JSON(http.StatusOK, sequence)
 	}).POST("/sequences", func(c *gin.Context) {
 		// retrieve transactions sequence from post request body
-		var req txsRequest
-		err := c.ShouldBindJSON(&req)
-		if err != nil {
+		req := txsRequest{}
+		if err := c.ShouldBindJSON(&req); err != nil {
 			if err.Error() == "EOF" {
 				renderError(c, http.StatusBadRequest, MissingRequiredParameter("txs"))
 			} else if err.Error() == "Key: 'txsRequest.Txs' Error:Field validation for 'Txs' failed on the 'required' tag" {
@@ -124,9 +123,9 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 		}
 
 		// validate the first tx
-		validationResult, err := nodeInteractor.ValidateTx(req.Txs[0])
-		if err != nil {
-			logger.Error("cannot validate the first tx of sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
+		validationResult, wavesErr := nodeInteractor.ValidateTx(req.Txs[0])
+		if wavesErr != nil {
+			logger.Error("cannot validate the first tx of sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(wavesErr))
 			renderError(c, http.StatusInternalServerError, InternalServerError())
 			return
 		}
@@ -135,11 +134,10 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 			return
 		}
 
-		txs := []repository.TxWithIDDto{}
-		var t txDto
+		var txs []repository.TxWithIDDto
+		t := txDto{}
 		for _, tx := range req.Txs {
-			err := json.NewDecoder(strings.NewReader(tx)).Decode(&t)
-			if err != nil {
+			if err := json.NewDecoder(strings.NewReader(tx)).Decode(&t); err != nil {
 				logger.Error("cannot decode one of the sequence's tx", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
 				renderError(c, http.StatusInternalServerError, InternalServerError())
 				return

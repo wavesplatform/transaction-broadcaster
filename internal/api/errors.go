@@ -6,11 +6,11 @@ import (
 
 const (
 	// validation errors
-	missingRequiredParameter = 10200
-	invalidParameterValue    = 10201
+	_missingRequiredParameter = 10200
+	_invalidParameterValue    = 10201
 
 	// internal server errors
-	internalServerError = 10500
+	_internalServerError = 10500
 )
 
 // error ...
@@ -49,7 +49,7 @@ func MissingRequiredParameter(parameterName string) Error {
 	details := map[string]string{
 		"parameter": parameterName,
 	}
-	return NewError(missingRequiredParameter, details)
+	return NewError(_missingRequiredParameter, details)
 }
 
 // InvalidParameterValue ...
@@ -58,12 +58,12 @@ func InvalidParameterValue(parameterName string, reason string) Error {
 		"parameter": parameterName,
 		"reason":    reason,
 	}
-	return NewError(invalidParameterValue, details)
+	return NewError(_invalidParameterValue, details)
 }
 
 // InternalServerError ...
 func InternalServerError() Error {
-	return NewError(internalServerError, nil)
+	return NewError(_internalServerError, nil)
 }
 
 // SingleHTTPError returns HTTPErrors build from single HTTPError
@@ -85,12 +85,12 @@ func (err *apiErrorImpl) Error() string {
 // Message ...
 func (err *apiErrorImpl) Message() string {
 	switch err.code {
-	case missingRequiredParameter:
+	case _missingRequiredParameter:
 		return "Missing required parameter."
-	case invalidParameterValue:
+	case _invalidParameterValue:
 		return "Invalid parameter value."
 
-	case internalServerError:
+	case _internalServerError:
 		fallthrough
 	default:
 		return "Internal server error."

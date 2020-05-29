@@ -23,8 +23,7 @@ func Init(dev bool) error {
 		logCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 	}
 
-	err := ltsv.RegisterLTSVEncoder()
-	if err != nil {
+	if err := ltsv.RegisterLTSVEncoder(); err != nil {
 		return err
 	}
 

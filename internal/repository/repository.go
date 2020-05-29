@@ -71,6 +71,12 @@ func (stx *SequenceTx) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// TxWithIDDto ...
+type TxWithIDDto struct {
+	ID string
+	Tx string
+}
+
 // State type represents type of sequence state
 type State uint8
 
@@ -137,34 +143,6 @@ func (st TransactionState) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s)
 }
 
-type sequenceModel struct {
-	ID               int64
-	BroadcastedCount uint32
-	TotalCount       uint32
-	State            State
-	ErrorMessage     string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-}
-
-type sequenceTxModel struct {
-	ID                 string
-	SequenceID         int64
-	State              TransactionState
-	Height             int32
-	ErrorMessage       string
-	PositionInSequence uint16
-	Tx                 string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-}
-
-// TxWithIDDto ...
-type TxWithIDDto struct {
-	ID string
-	Tx string
-}
-
 // Repository ...
 type Repository interface {
 	GetSequenceByID(id int64) (*Sequence, error)
@@ -189,9 +167,9 @@ func New(db *pg.DB) Repository {
 }
 
 func (s *repoImpl) GetSequenceByID(sequenceID int64) (*Sequence, error) {
-	var seqDto sequenceModel
+	seq := Sequence{}
 
-	_, err := s.Conn.QueryOne(&seqDto, "select id, state, error_message, created_at, updated_at, coalesce((select count(*) from sequences_txs where sequence_id=?0 and state=?1), 0) as broadcasted_count, (select count(*) from sequences_txs where sequence_id=?0) as total_count from sequences where id=?0", sequenceID, TransactionStateConfirmed)
+	_, err := s.Conn.QueryOne(&seq, "select id, state, error_message, created_at, updated_at, coalesce((select count(*) from sequences_txs where sequence_id=?0 and state=?1), 0) as broadcasted_count, (select count(*) from sequences_txs where sequence_id=?0) as total_count from sequences where id=?0", sequenceID, TransactionStateConfirmed)
 	if err != nil {
 		if err.Error() == pg.ErrNoRows.Error() {
 			return nil, nil
@@ -199,39 +177,15 @@ func (s *repoImpl) GetSequenceByID(sequenceID int64) (*Sequence, error) {
 		return nil, err
 	}
 
-	seq := Sequence{
-		ID:               seqDto.ID,
-		BroadcastedCount: seqDto.BroadcastedCount,
-		TotalCount:       seqDto.TotalCount,
-		State:            seqDto.State,
-		ErrorMessage:     seqDto.ErrorMessage,
-		CreatedAt:        seqDto.CreatedAt,
-		UpdatedAt:        seqDto.UpdatedAt,
-	}
 	return &seq, nil
 }
 
 func (s *repoImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error) {
-	var txsDto []*sequenceTxModel
+	var txs []*SequenceTx
 
-	_, err := s.Conn.Query(&txsDto, "select tx_id as id, sequence_id, state, height, error_message, position_in_sequence, tx, created_at, updated_at from sequences_txs where sequence_id=?0", sequenceID)
+	_, err := s.Conn.Query(&txs, "select tx_id as id, sequence_id, state, height, error_message, position_in_sequence, tx, created_at, updated_at from sequences_txs where sequence_id=?0", sequenceID)
 	if err != nil {
 		return nil, err
-	}
-
-	txs := []*SequenceTx{}
-	for _, txDto := range txsDto {
-		txs = append(txs, &SequenceTx{
-			ID:                 txDto.ID,
-			SequenceID:         txDto.SequenceID,
-			State:              txDto.State,
-			Height:             txDto.Height,
-			ErrorMessage:       txDto.ErrorMessage,
-			PositionInSequence: txDto.PositionInSequence,
-			Tx:                 txDto.Tx,
-			CreatedAt:          txDto.CreatedAt,
-			UpdatedAt:          txDto.UpdatedAt,
-		})
 	}
 
 	return txs, nil
@@ -240,7 +194,7 @@ func (s *repoImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error) {
 // GetHangingSequenceIds tries to get hanging sequence ids
 // Hanging sequences - with state=processing and not updated for ttl.
 func (s *repoImpl) GetHangingSequenceIds(ttl time.Duration) ([]int64, error) {
-	ids := []int64{}
+	var ids []int64
 
 	_, err := s.Conn.Query(&ids, "select s.id from sequences s where state=?0 and updated_at < NOW() - interval '?1 seconds' order by id asc", StateProcessing, ttl.Seconds())
 	if err != nil {
@@ -251,7 +205,7 @@ func (s *repoImpl) GetHangingSequenceIds(ttl time.Duration) ([]int64, error) {
 }
 
 func (s *repoImpl) CreateSequence(txs []TxWithIDDto) (int64, error) {
-	var sequenceID int64
+	sequenceID := int64(0)
 
 	err := s.Conn.RunInTransaction(func(tr *pg.Tx) error {
 		_, err := tr.QueryOne(&sequenceID, "insert into sequences(state) values(?0) returning id;", StatePending)

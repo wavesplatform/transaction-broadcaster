@@ -39,13 +39,12 @@ func main() {
 
 	sequenceChan := make(chan int64)
 
-	nodeInteractor := node.New(cfg.Node.NodeURL, cfg.Node.NodeAPIKey, cfg.Node.WaitForTxStatusDelay, cfg.Node.WaitForTxTimeout)
+	nodeInteractor := node.New(cfg.Node.NodeURL, cfg.Node.NodeAPIKey, cfg.Node.WaitForTxStatusDelay, cfg.Node.WaitForTxTimeout, cfg.Node.WaitForNextHeightDelay)
 
 	disp := dispatcher.New(repo, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
 
 	go func() {
-		err := disp.RunLoop()
-		if err != nil {
+		if err := disp.RunLoop(); err != nil {
 			panic(err)
 		}
 	}()
@@ -55,8 +54,7 @@ func main() {
 	addr := fmt.Sprintf(":%d", cfg.Port)
 
 	logger.Info("starting REST API server", zap.Int("port", cfg.Port))
-	runError := s.Run(addr)
-	if runError != nil {
+	if runError := s.Run(addr); runError != nil {
 		panic(runError)
 	}
 }

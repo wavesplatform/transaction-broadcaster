@@ -68,8 +68,7 @@ func (d *dispatcherImpl) RunLoop() error {
 		case seqID := <-d.sequenceChan:
 			d.logger.Debug("got new sequence", zap.Int64("sequence_id", seqID))
 
-			err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing)
-			if err != nil {
+			if err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
 				d.logger.Error("error occured while setting sequence processing state", zap.Error(err))
 				return err
 			}
@@ -85,8 +84,7 @@ func (d *dispatcherImpl) RunLoop() error {
 			case worker.NonRecoverableError:
 				d.logger.Debug("non-recoverable error", zap.String("message", e.Err.Error()))
 
-				err := d.repo.SetSequenceErrorStateByID(e.SequenceID, e.Err)
-				if err != nil {
+				if err := d.repo.SetSequenceErrorStateByID(e.SequenceID, e.Err); err != nil {
 					d.logger.Error("error occured while setting sequence error state", zap.Error(err))
 					return err
 				}
@@ -99,8 +97,7 @@ func (d *dispatcherImpl) RunLoop() error {
 		case seqID := <-d.completedSequenceChan:
 			d.logger.Debug("got new completed sequence")
 
-			err := d.repo.SetSequenceStateByID(seqID, repository.StateDone)
-			if err != nil {
+			if err := d.repo.SetSequenceStateByID(seqID, repository.StateDone); err != nil {
 				d.logger.Error("error occured while setting sequence done state", zap.Error(err))
 				return err
 			}
@@ -114,8 +111,7 @@ func (d *dispatcherImpl) RunLoop() error {
 
 			for _, seqID := range hangingSequenceIds {
 				// refresh sequence status
-				err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing)
-				if err != nil {
+				if err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
 					d.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
 					return err
 				}
@@ -131,8 +127,7 @@ func (d *dispatcherImpl) RunLoop() error {
 func (d *dispatcherImpl) runWorker(seqID int64) {
 	w := worker.New(d.repo, d.nodeInteractor, d.txProcessingTTL, d.heightsAfterLastTx, d.waitForNextHeightDelay)
 	go func(seqID int64) {
-		err := w.Run(seqID)
-		if err != nil {
+		if err := w.Run(seqID); err != nil {
 			d.errorsChan <- workerError{
 				Err:        err,
 				SequenceID: seqID,

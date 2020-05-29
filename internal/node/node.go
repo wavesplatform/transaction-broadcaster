@@ -73,29 +73,31 @@ type Interactor interface {
 	BroadcastTx(string) (string, Error)
 	WaitForTxStatus(string, TransactionStatus) (int32, Error)
 	GetCurrentHeight() (int32, Error)
-	WaitForNHeights(int32) Error
+	WaitForTargetHeight(int32) Error
 	WaitForNextHeight() Error
 	GetTxsAvailability([]string) (Availability, Error)
 }
 
 type impl struct {
-	nodeURL              url.URL
-	nodeAPIKey           string
-	logger               *zap.Logger
-	waitForTxStatusDelay time.Duration
-	waitForTxTimeout     time.Duration
+	nodeURL                url.URL
+	nodeAPIKey             string
+	logger                 *zap.Logger
+	waitForTxStatusDelay   time.Duration
+	waitForTxTimeout       time.Duration
+	waitForNextHeightDelay time.Duration
 }
 
 // New returns instance of Interactor interface implementation
-func New(nodeURL url.URL, nodeAPIKey string, waitForTxStatusDelay, waitForTxTimeout int32) Interactor {
+func New(nodeURL url.URL, nodeAPIKey string, waitForTxStatusDelay, waitForTxTimeout, waitForNextHeightDelay int32) Interactor {
 	logger := log.Logger.Named("nodeInteractor")
 
 	return &impl{
-		nodeURL:              nodeURL,
-		nodeAPIKey:           nodeAPIKey,
-		logger:               logger,
-		waitForTxStatusDelay: time.Duration(waitForTxStatusDelay) * time.Millisecond,
-		waitForTxTimeout:     time.Duration(waitForTxTimeout) * time.Millisecond,
+		nodeURL:                nodeURL,
+		nodeAPIKey:             nodeAPIKey,
+		logger:                 logger,
+		waitForTxStatusDelay:   time.Duration(waitForTxStatusDelay) * time.Millisecond,
+		waitForTxTimeout:       time.Duration(waitForTxTimeout) * time.Millisecond,
+		waitForNextHeightDelay: time.Duration(waitForNextHeightDelay) * time.Millisecond,
 	}
 }
 
@@ -109,13 +111,10 @@ func (r *impl) GetCurrentHeight() (int32, Error) {
 		return 0, NewError(InternalError, err.Error())
 	}
 
-	if resp != nil {
-		defer resp.Body.Close()
-	}
+	defer resp.Body.Close()
 
 	blocksHeight := blocksHeightResponse{}
-	err = json.NewDecoder(resp.Body).Decode(&blocksHeight)
-	if err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&blocksHeight); err != nil {
 		return 0, NewError(InternalError, err.Error())
 	}
 	return blocksHeight.Height, nil
@@ -140,14 +139,11 @@ func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 		return nil, NewError(InternalError, err.Error())
 	}
 
-	if resp != nil {
-		defer resp.Body.Close()
-	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
 		validateTx := validateTxResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&validateTx)
-		if err != nil {
+		if err = json.NewDecoder(resp.Body).Decode(&validateTx); err != nil {
 			return nil, NewError(InternalError, err.Error())
 		}
 
@@ -158,8 +154,7 @@ func (r *impl) ValidateTx(tx string) (*ValidationResult, Error) {
 	}
 
 	validateTxError := errorResponse{}
-	err = json.NewDecoder(resp.Body).Decode(&validateTxError)
-	if err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&validateTxError); err != nil {
 		return nil, NewError(InternalError, err.Error())
 	}
 
@@ -179,16 +174,13 @@ func (r *impl) BroadcastTx(tx string) (string, Error) {
 		return "", NewError(InternalError, err.Error())
 	}
 
-	if resp != nil {
-		defer resp.Body.Close()
-	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusBadRequest {
 			t := transactionModel{}
 			reader := strings.NewReader(tx)
-			err = json.NewDecoder(reader).Decode(&t)
-			if err != nil {
+			if err = json.NewDecoder(reader).Decode(&t); err != nil {
 				return "", NewError(InternalError, err.Error())
 			}
 
@@ -201,9 +193,8 @@ func (r *impl) BroadcastTx(tx string) (string, Error) {
 				return t.id, nil
 			}
 
-			var errorResponseDto errorResponse
-			err = json.NewDecoder(resp.Body).Decode(&errorResponseDto)
-			if err != nil {
+			errorResponseDto := errorResponse{}
+			if err = json.NewDecoder(resp.Body).Decode(&errorResponseDto); err != nil {
 				return "", NewError(InternalError, err.Error())
 			}
 
@@ -213,9 +204,8 @@ func (r *impl) BroadcastTx(tx string) (string, Error) {
 		return "", NewError(BroadcastServerError, resp.Status)
 	}
 
-	var broadcastResponseDto broadcastResponse
-	err = json.NewDecoder(resp.Body).Decode(&broadcastResponseDto)
-	if err != nil {
+	broadcastResponseDto := broadcastResponse{}
+	if err = json.NewDecoder(resp.Body).Decode(&broadcastResponseDto); err != nil {
 		return "", NewError(InternalError, err.Error())
 	}
 
@@ -245,21 +235,15 @@ func (r *impl) WaitForTxStatus(txID string, waitForStatus TransactionStatus) (in
 }
 
 // WaitForNHeights waits for n heights in the blockchain
-func (r *impl) WaitForNHeights(nHeights int32) Error {
-	currentHeight, err := r.GetCurrentHeight()
-	if err != nil {
-		return err
-	}
-
-	var newHeight int32
-	ticker := time.NewTicker(1 * time.Second)
+func (r *impl) WaitForTargetHeight(targetHeight int32) Error {
+	ticker := time.NewTicker(r.waitForNextHeightDelay)
 	for range ticker.C {
-		newHeight, err = r.GetCurrentHeight()
+		newHeight, err := r.GetCurrentHeight()
 		if err != nil {
 			return NewError(InternalError, err.Error())
 		}
 
-		if newHeight > currentHeight+nHeights {
+		if newHeight >= targetHeight {
 			ticker.Stop()
 		}
 	}
@@ -269,7 +253,11 @@ func (r *impl) WaitForNHeights(nHeights int32) Error {
 
 // WaitForNextHeight waits for the next height in the blockchain
 func (r *impl) WaitForNextHeight() Error {
-	return r.WaitForNHeights(1)
+	currentHeight, err := r.GetCurrentHeight()
+	if err != nil {
+		return err
+	}
+	return r.WaitForTargetHeight(currentHeight + 1)
 }
 
 // GetTxsAvailability
@@ -289,22 +277,18 @@ func (r *impl) GetTxsAvailability(txIDs []string) (Availability, Error) {
 		return nil, NewError(InternalError, err.Error())
 	}
 
-	if resp != nil {
-		defer resp.Body.Close()
-	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errorResponseDto := errorResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&errorResponseDto)
-		if err != nil {
+		if err = json.NewDecoder(resp.Body).Decode(&errorResponseDto); err != nil {
 			return nil, NewError(InternalError, err.Error())
 		}
 		return nil, NewError(InternalError, errorResponseDto.Message)
 	}
 
 	txStatuses := transactionsStatusResponse{}
-	err = json.NewDecoder(resp.Body).Decode(&txStatuses)
-	if err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&txStatuses); err != nil {
 		return nil, NewError(InternalError, err.Error())
 	}
 
@@ -329,17 +313,14 @@ func (r *impl) getTxStatus(txID string) (*transactionStatusResponse, Error) {
 		return nil, NewError(InternalError, err.Error())
 	}
 
-	if resp != nil {
-		defer resp.Body.Close()
-	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, NewError(GetTxStatusError, resp.Status)
 	}
 
 	txStatus := transactionsStatusResponse{}
-	err = json.NewDecoder(resp.Body).Decode(&txStatus)
-	if err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&txStatus); err != nil {
 		return nil, NewError(InternalError, err.Error())
 	}
 
