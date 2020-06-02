@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,6 +62,36 @@ func createErrorRenderer(logger *zap.Logger) func(*gin.Context, int, Error) {
 	}
 }
 
+func parseTransactions(request string) []string {
+	var transactions []string
+	b := strings.Builder{}
+	skipStringLen := strings.IndexRune(request, '[')
+	transactionsString := request[skipStringLen : len(request)-1]
+	bracketsCount := 0
+	for _, ch := range transactionsString {
+		if ch == '{' {
+			bracketsCount++
+		}
+		if ch == '}' {
+			bracketsCount--
+			// json object was closed
+			if bracketsCount == 0 {
+				// dont forget append the last bracket
+				b.WriteRune(ch)
+				transactions = append(transactions, b.String())
+				// reset for retrieving the next object
+				b.Reset()
+			}
+		}
+		// do not add runes between brackets
+		if bracketsCount > 0 {
+			b.WriteRune(ch)
+		}
+	}
+
+	return transactions
+}
+
 // New ...
 func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan<- int64) *gin.Engine {
 	logger := log.Logger.Named("server.requestHandler")
@@ -103,43 +134,28 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 
 		c.JSON(http.StatusOK, sequence)
 	}).POST("/sequences", func(c *gin.Context) {
-		// retrieve transactions sequence from post request body
-		req := txsRequest{}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			if err.Error() == "EOF" {
-				renderError(c, http.StatusBadRequest, MissingRequiredParameter("txs"))
-			} else if err.Error() == "Key: 'txsRequest.Txs' Error:Field validation for 'Txs' failed on the 'required' tag" {
-				renderError(c, http.StatusBadRequest, MissingRequiredParameter("txs"))
-			} else {
-				renderError(c, http.StatusBadRequest, InvalidParameterValue("txs", "txs parameter has to be an array of string"))
-			}
-
-			return
-		}
-
-		if len(req.Txs) == 0 {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("txs", "There is no any txs in the request."))
-			return
-		}
-
-		// validate the first tx
-		validationResult, wavesErr := nodeInteractor.ValidateTx(req.Txs[0])
-		if wavesErr != nil {
-			logger.Error("cannot validate the first tx of sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(wavesErr))
+		// retrieve transactions from post request body
+		buf := bytes.Buffer{}
+		_, err := buf.ReadFrom(c.Request.Body)
+		if err != nil {
+			logger.Error("cannot get request body", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
 			renderError(c, http.StatusInternalServerError, InternalServerError())
 			return
 		}
-		if !validationResult.IsValid {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("txs", fmt.Sprintf("The first tx is invalid: %s.", validationResult.ErrorMessage)))
+
+		transactions := parseTransactions(buf.String())
+
+		if len(transactions) == 0 {
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There is no any transactions in the request."))
 			return
 		}
 
 		var txs []repository.TxWithIDDto
 		t := txDto{}
-		for _, tx := range req.Txs {
+		for _, tx := range transactions {
 			if err := json.NewDecoder(strings.NewReader(tx)).Decode(&t); err != nil {
-				logger.Error("cannot decode one of the sequence's tx", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-				renderError(c, http.StatusInternalServerError, InternalServerError())
+				logger.Error("cannot decode one of the sequence's transaction", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
+				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", fmt.Sprintf("Error occurred whilde decoding transactions: %s.", err.Error())))
 				return
 			}
 			txs = append(txs, repository.TxWithIDDto{
@@ -147,6 +163,19 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 				Tx: tx,
 			})
 		}
+
+		// validate the first tx
+		validationResult, wavesErr := nodeInteractor.ValidateTx(transactions[0])
+		if wavesErr != nil {
+			logger.Error("cannot validate the first tx of sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(wavesErr))
+			renderError(c, http.StatusInternalServerError, InternalServerError())
+			return
+		}
+		if !validationResult.IsValid {
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", fmt.Sprintf("The first transaction is invalid: %s.", validationResult.ErrorMessage)))
+			return
+		}
+
 		sequenceID, err := repo.CreateSequence(txs)
 		if err != nil {
 			logger.Error("cannot create sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))

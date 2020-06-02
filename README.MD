@@ -26,7 +26,7 @@
 #### Request: ####
 ```
 {
-    "txs": [<array of strings>]
+    "transactions": [<array of object transaction>]
 }
 ```
 
