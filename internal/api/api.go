@@ -25,7 +25,7 @@ type txDto struct {
 }
 
 type txsRequest struct {
-	Txs []string `json:"txs" binding:"required"`
+	Txs []string `json:"transactions" binding:"required"`
 }
 
 func accessLog(logger *zap.Logger) func(*gin.Context) {
@@ -65,7 +65,7 @@ func createErrorRenderer(logger *zap.Logger) func(*gin.Context, int, Error) {
 func parseTransactions(request string) []string {
 	var transactions []string
 	b := strings.Builder{}
-	skipStringLen := strings.IndexRune(request, '[')
+	skipStringLen := len(`{"transactions":[`)
 	transactionsString := request[skipStringLen : len(request)-1]
 	bracketsCount := 0
 	for _, ch := range transactionsString {
