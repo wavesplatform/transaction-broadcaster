@@ -183,7 +183,7 @@ func (s *repoImpl) GetSequenceByID(sequenceID int64) (*Sequence, error) {
 func (s *repoImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error) {
 	var txs []*SequenceTx
 
-	_, err := s.Conn.Query(&txs, "select tx_id as id, sequence_id, state, height, error_message, position_in_sequence, tx, created_at, updated_at from sequences_txs where sequence_id=?0", sequenceID)
+	_, err := s.Conn.Query(&txs, "select tx_id as id, sequence_id, state, height, error_message, position_in_sequence, tx, created_at, updated_at from sequences_txs where sequence_id=?0 order by position_in_sequence asc", sequenceID)
 	if err != nil {
 		return nil, err
 	}
