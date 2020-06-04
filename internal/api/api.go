@@ -62,10 +62,13 @@ func createErrorRenderer(logger *zap.Logger) func(*gin.Context, int, Error) {
 	}
 }
 
-func parseTransactions(request string) []string {
+func parseTransactions(request string) ([]string, error) {
 	var transactions []string
 	b := strings.Builder{}
 	skipStringLen := len(`{"transactions":[`)
+	if len(request) < skipStringLen {
+		return nil, errors.New("length of request string is too small")
+	}
 	transactionsString := request[skipStringLen : len(request)-1]
 	bracketsCount := 0
 	for _, ch := range transactionsString {
@@ -89,7 +92,7 @@ func parseTransactions(request string) []string {
 		}
 	}
 
-	return transactions
+	return transactions, nil
 }
 
 // New ...
@@ -143,7 +146,11 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 			return
 		}
 
-		transactions := parseTransactions(buf.String())
+		transactions, err := parseTransactions(buf.String())
+		if err != nil {
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "Invalid request."))
+			return
+		}
 
 		if len(transactions) == 0 {
 			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There is no any transactions in the request."))
