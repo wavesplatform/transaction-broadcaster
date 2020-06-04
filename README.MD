@@ -31,7 +31,7 @@
 ```
 
 #### Responses: ####
-*200 OK*
+*201 Created*
 ```
 {
     "id": <number>  // sequence id
