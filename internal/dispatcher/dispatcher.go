@@ -24,6 +24,11 @@ type Dispatcher interface {
 	RunLoop() error
 }
 
+type workerParams struct {
+	txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32
+	numberOfRevalidateAttempts                                  int16
+}
+
 type dispatcherImpl struct {
 	repo                                repository.Repository
 	nodeInteractor                      node.Interactor
@@ -32,12 +37,12 @@ type dispatcherImpl struct {
 	errorsChan                          chan workerError
 	loopDelay                           time.Duration
 	sequenceTTL                         time.Duration
-	// worker params
-	txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32
+
+	worker workerParams
 }
 
 // New returns instance of Dispatcher interface implementation
-func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
+func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32, numberOfRevalidateAttempts int16) Dispatcher {
 	logger := log.Logger.Named("dispatcher")
 	completedSequenceChan := make(chan int64)
 	errorsChan := make(chan workerError)
@@ -52,9 +57,12 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 		loopDelay:             time.Duration(loopDelay) * time.Millisecond,
 		sequenceTTL:           time.Duration(sequenceTTL) * time.Millisecond,
 
-		txProcessingTTL:        txProcessingTTL,
-		heightsAfterLastTx:     heightsAfterLastTx,
-		waitForNextHeightDelay: waitForNextHeightDelay,
+		worker: workerParams{
+			txProcessingTTL:            txProcessingTTL,
+			heightsAfterLastTx:         heightsAfterLastTx,
+			waitForNextHeightDelay:     waitForNextHeightDelay,
+			numberOfRevalidateAttempts: numberOfRevalidateAttempts,
+		},
 	}
 }
 
@@ -130,7 +138,7 @@ func (d *dispatcherImpl) RunLoop() error {
 }
 
 func (d *dispatcherImpl) runWorker(seqID int64) {
-	w := worker.New(string(time.Now().Unix()), d.repo, d.nodeInteractor, d.txProcessingTTL, d.heightsAfterLastTx, d.waitForNextHeightDelay)
+	w := worker.New(string(time.Now().Unix()), d.repo, d.nodeInteractor, d.worker.txProcessingTTL, d.worker.heightsAfterLastTx, d.worker.waitForNextHeightDelay, d.worker.numberOfRevalidateAttempts)
 	go func(seqID int64) {
 		if err := w.Run(seqID); err != nil {
 			d.errorsChan <- workerError{
