@@ -157,7 +157,7 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 		for _, tx := range transactions {
 			if err := json.NewDecoder(strings.NewReader(tx)).Decode(&t); err != nil {
 				logger.Error("cannot decode one of the sequence's transaction", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", fmt.Sprintf("Error occurred whilde decoding transactions: %s.", err.Error())))
+				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", fmt.Sprintf("Error occurred while decoding transactions: %s.", err.Error())))
 				return
 			}
 			if _, ok := txIDs[t.ID]; ok {
