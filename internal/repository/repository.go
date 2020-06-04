@@ -38,8 +38,8 @@ func (s *Sequence) MarshalJSON() ([]byte, error) {
 		UpdatedAt int64 `json:"updated_at"`
 	}{
 		JSONSequence: (*JSONSequence)(s),
-		CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.UTC().Nanosecond()/1000),
-		UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.UTC().Nanosecond()/1000),
+		CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.UTC().Nanosecond()/1000000),
+		UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.UTC().Nanosecond()/1000000),
 	})
 }
 
@@ -66,8 +66,8 @@ func (stx *SequenceTx) MarshalJSON() ([]byte, error) {
 		UpdatedAt int64 `json:"updated_at"`
 	}{
 		JSONSequenceTx: (*JSONSequenceTx)(stx),
-		CreatedAt:      stx.CreatedAt.Unix()*1000 + int64(stx.CreatedAt.UTC().Nanosecond()/1000),
-		UpdatedAt:      stx.UpdatedAt.Unix()*1000 + int64(stx.UpdatedAt.UTC().Nanosecond()/1000),
+		CreatedAt:      stx.CreatedAt.Unix()*1000 + int64(stx.CreatedAt.UTC().Nanosecond()/1000000),
+		UpdatedAt:      stx.UpdatedAt.Unix()*1000 + int64(stx.UpdatedAt.UTC().Nanosecond()/1000000),
 	})
 }
 
