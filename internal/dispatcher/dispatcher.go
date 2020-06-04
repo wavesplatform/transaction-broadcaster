@@ -81,7 +81,7 @@ func (d *dispatcherImpl) RunLoop() error {
 				d.logger.Debug("recoverable error", zap.String("message", e.Err.Error()))
 
 				// refresh sequence status
-				if err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
+				if err := d.repo.SetSequenceStateByID(e.SequenceID, repository.StateProcessing); err != nil {
 					d.logger.Error("error occured while setting sequence processing state", zap.Error(err))
 					return err
 				}
