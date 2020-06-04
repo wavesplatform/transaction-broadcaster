@@ -151,6 +151,8 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 		}
 
 		var txs []repository.TxWithIDDto
+		// for txID uniqueness checking
+		var txIDs = make(map[string]bool)
 		t := txDto{}
 		for _, tx := range transactions {
 			if err := json.NewDecoder(strings.NewReader(tx)).Decode(&t); err != nil {
@@ -158,10 +160,16 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", fmt.Sprintf("Error occurred whilde decoding transactions: %s.", err.Error())))
 				return
 			}
+			if _, ok := txIDs[t.ID]; ok {
+				logger.Error("there are duplicates in the transactions array", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
+				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are duplicates in the transactions array"))
+				return
+			}
 			txs = append(txs, repository.TxWithIDDto{
 				ID: t.ID,
 				Tx: tx,
 			})
+			txIDs[t.ID] = true
 		}
 
 		// validate the first tx
