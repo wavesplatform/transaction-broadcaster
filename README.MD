@@ -71,7 +71,7 @@
 | 8 | `WAVES_NODE_URL` | string | - | Node URL that will be used to validate and broadcast txs |
 | 9 | `WAVES_NODE_API_KEY` | string | - | Node API Key, that will be used to validate txs |
 | 10 | `WAVES_WAIT_FOR_TX_STATUS_DELAY` | number | 1000 | Number in ms - delay to recheck tx status |
-| 11 | `WAVES_WAIT_FOR_TX_TIMEOUT` | number | 1000 | Number in ms - time after which tx status checking is considering as failed |
+| 11 | `WAVES_WAIT_FOR_TX_TIMEOUT` | number | 90000 | Number in ms - time after which tx status checking is considering as failed (by default ~1.5 block) |
 | 12 | `WAVES_WAIT_FOR_NEXT_HEIGHT_DELAY` | number | 1000 | Number in ms - time after which worker will check the blockchain height again |
 | 13 | `DISPATCHER_LOOP_DELAY` | number | 1000 | Number in ms - check for hanging sequences delay |
 | 14 | `DISPATCHER_SEQUENCE_TTL` | number | 5000 | Number in ms - in which time sequences in state `processing` were not updated and have to be reseted, and dispatcher will take them out |
