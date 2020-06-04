@@ -80,6 +80,11 @@ func (d *dispatcherImpl) RunLoop() error {
 			case worker.RecoverableError:
 				d.logger.Debug("recoverable error", zap.String("message", e.Err.Error()))
 
+				// refresh sequence status
+				if err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
+					d.logger.Error("error occured while setting sequence processing state", zap.Error(err))
+					return err
+				}
 				d.runWorker(e.SequenceID)
 			case worker.NonRecoverableError:
 				d.logger.Debug("non-recoverable error", zap.String("message", e.Err.Error()))
@@ -125,7 +130,7 @@ func (d *dispatcherImpl) RunLoop() error {
 }
 
 func (d *dispatcherImpl) runWorker(seqID int64) {
-	w := worker.New(d.repo, d.nodeInteractor, d.txProcessingTTL, d.heightsAfterLastTx, d.waitForNextHeightDelay)
+	w := worker.New(string(time.Now().Unix()), d.repo, d.nodeInteractor, d.txProcessingTTL, d.heightsAfterLastTx, d.waitForNextHeightDelay)
 	go func(seqID int64) {
 		if err := w.Run(seqID); err != nil {
 			d.errorsChan <- workerError{

@@ -16,25 +16,27 @@ type Worker interface {
 }
 
 type workerImpl struct {
-	repo                   repository.Repository
-	nodeInteractor         node.Interactor
-	logger                 *zap.Logger
-	txProcessingTTL        time.Duration
-	heightsAfterLastTx     int32
-	waitForNextHeightDelay time.Duration
+	repo                       repository.Repository
+	nodeInteractor             node.Interactor
+	logger                     *zap.Logger
+	txProcessingTTL            time.Duration
+	heightsAfterLastTx         int32
+	waitForNextHeightDelay     time.Duration
+	numberOfRevalidateAttempts int16
 }
 
 // New returns instance of Worker interface implementation
-func New(repo repository.Repository, nodeInteractor node.Interactor, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Worker {
-	logger := log.Logger.Named("worker")
+func New(workerID string, repo repository.Repository, nodeInteractor node.Interactor, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32, numberOfRevalidateAttempts int16) Worker {
+	logger := log.Logger.Named("worker-" + workerID)
 
 	return &workerImpl{
-		logger:                 logger,
-		repo:                   repo,
-		nodeInteractor:         nodeInteractor,
-		txProcessingTTL:        time.Duration(txProcessingTTL) * time.Millisecond,
-		heightsAfterLastTx:     heightsAfterLastTx,
-		waitForNextHeightDelay: time.Duration(waitForNextHeightDelay) * time.Millisecond,
+		logger:                     logger,
+		repo:                       repo,
+		nodeInteractor:             nodeInteractor,
+		txProcessingTTL:            time.Duration(txProcessingTTL) * time.Millisecond,
+		heightsAfterLastTx:         heightsAfterLastTx,
+		waitForNextHeightDelay:     time.Duration(waitForNextHeightDelay) * time.Millisecond,
+		numberOfRevalidateAttempts: numberOfRevalidateAttempts,
 	}
 }
 
@@ -85,20 +87,14 @@ func (w *workerImpl) Run(sequenceID int64) error {
 		}
 
 		switch tx.State {
-		case repository.TransactionStatePending:
-			if err := w.processTx(tx, true); err != nil {
-				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
-				return err
-			}
-			confirmedTxs[tx.ID] = tx
 		case repository.TransactionStateProcessing:
 			if time.Now().Sub(tx.UpdatedAt) < w.txProcessingTTL {
 				w.logger.Debug("tx is under processing, processing delay is not over", zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
 				return nil
 			}
-
-		case repository.TransactionStateUnconfirmed:
-			if err := w.processTx(tx, true); err != nil {
+			fallthrough
+		case repository.TransactionStatePending, repository.TransactionStateValidated, repository.TransactionStateUnconfirmed:
+			if err := w.processTx(tx, w.numberOfRevalidateAttempts); err != nil {
 				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
 				return err
 			}
@@ -126,7 +122,7 @@ func (w *workerImpl) Run(sequenceID int64) error {
 	return nil
 }
 
-func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error {
+func (w *workerImpl) processTx(tx *repository.SequenceTx, revalidateTriesCounter int16) error {
 	switch tx.State {
 	case repository.TransactionStatePending:
 		w.logger.Debug("process tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
@@ -138,7 +134,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error
 	case repository.TransactionStateProcessing:
 		w.logger.Debug("validate tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
 
-		if err := w.validateTx(tx, isFirstTry); err != nil {
+		if err := w.validateTx(tx, revalidateTriesCounter); err != nil {
 			return err
 		}
 
@@ -180,7 +176,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error
 	}
 }
 
-func (w *workerImpl) validateTx(tx *repository.SequenceTx, isFirstTry bool) error {
+func (w *workerImpl) validateTx(tx *repository.SequenceTx, revalidateAttemptsCounter int16) error {
 	validationResult, wavesErr := w.nodeInteractor.ValidateTx(tx.Tx)
 	if wavesErr != nil {
 		w.logger.Error("error occurred while validating tx", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
@@ -191,9 +187,11 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx, isFirstTry bool) erro
 		w.logger.Debug("invalid tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
 
 		// try to revalidate tx on the next blockchain height
-		if isFirstTry {
+		if revalidateAttemptsCounter > 0 {
+			w.logger.Debug("wait for next height and restart sequence", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("revalidate_attempts_counter", revalidateAttemptsCounter))
+
 			w.nodeInteractor.WaitForNextHeight()
-			return w.processTx(tx, false)
+			return w.processTx(tx, revalidateAttemptsCounter-1)
 		}
 
 		if err := w.repo.SetSequenceTxErrorState(tx, validationResult.ErrorMessage); err != nil {
