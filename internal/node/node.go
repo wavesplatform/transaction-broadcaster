@@ -243,7 +243,7 @@ func (r *impl) WaitForTargetHeight(targetHeight int32) Error {
 			return NewError(InternalError, err.Error())
 		}
 
-		if newHeight >= targetHeight {
+		if newHeight > targetHeight {
 			ticker.Stop()
 		}
 	}

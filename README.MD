@@ -78,4 +78,3 @@
 | 15 | `WORKER_TX_PROCESSING_TTL` | number | 3000 | Number in ms - after which time transactions in state `processing` were not updated and have to be retaken |
 | 16 | `WORKER_HEIGHTS_AFTER_LAST_TX` | number | 6 | Number - after which blocks number sequence is considered as done |
 | 17 | `WORKER_WAIT_FOR_NEXT_HEIGHT_DELAY` | number | 1000 | Number in ms - time after which worker will check the blockchain height again |
-| 18 | `WORKER_NUMBER_OF_REVALIDATE_ATTEMPTS` | number | 6 | Number - number of transaction revalidate attemts |
