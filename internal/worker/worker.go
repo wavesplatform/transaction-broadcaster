@@ -14,7 +14,7 @@ var transactionTimestampErrorRE = regexp.MustCompile("Transaction timestamp \\d+
 
 // Worker represents worker interface
 type Worker interface {
-	Run(sequenceID int64) error
+	Run(sequenceID int64) ErrorWithReason
 }
 
 type workerImpl struct {
@@ -41,7 +41,7 @@ func New(workerID string, repo repository.Repository, nodeInteractor node.Intera
 }
 
 // Run starts the worker processing sequenceID
-func (w *workerImpl) Run(sequenceID int64) error {
+func (w *workerImpl) Run(sequenceID int64) ErrorWithReason {
 	w.logger.Debug("start processing sequence", zap.Int64("sequence_id", sequenceID))
 
 	txs, err := w.repo.GetSequenceTxsByID(sequenceID)
@@ -115,14 +115,14 @@ func (w *workerImpl) Run(sequenceID int64) error {
 
 	targetHeight := startHeight + w.heightsAfterLastTx
 
-	if err = w.waitForTargetHeight(targetHeight, sequenceID, confirmedTxIDs); err != nil {
+	if err := w.waitForTargetHeight(targetHeight, sequenceID, confirmedTxIDs); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (w *workerImpl) processTx(tx *repository.SequenceTx) error {
+func (w *workerImpl) processTx(tx *repository.SequenceTx) ErrorWithReason {
 	switch tx.State {
 	case repository.TransactionStatePending:
 		w.logger.Debug("process tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
@@ -176,7 +176,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx) error {
 	}
 }
 
-func (w *workerImpl) validateTx(tx *repository.SequenceTx) error {
+func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 	validationResult, wavesErr := w.nodeInteractor.ValidateTx(tx.Tx)
 	if wavesErr != nil {
 		w.logger.Error("error occurred while validating tx", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
@@ -216,7 +216,7 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) error {
 	return nil
 }
 
-func (w *workerImpl) broadcastTx(tx *repository.SequenceTx) error {
+func (w *workerImpl) broadcastTx(tx *repository.SequenceTx) ErrorWithReason {
 	_, wavesErr := w.nodeInteractor.BroadcastTx(tx.Tx)
 	if wavesErr != nil {
 		if wavesErr.Code() == node.BroadcastClientError {
@@ -231,7 +231,7 @@ func (w *workerImpl) broadcastTx(tx *repository.SequenceTx) error {
 	return nil
 }
 
-func (w *workerImpl) waitForTxConfirmation(tx *repository.SequenceTx) (int32, error) {
+func (w *workerImpl) waitForTxConfirmation(tx *repository.SequenceTx) (int32, ErrorWithReason) {
 	height, wavesErr := w.nodeInteractor.WaitForTxStatus(tx.ID, node.TransactionStatusConfirmed)
 	if wavesErr != nil {
 		return 0, NewRecoverableError(wavesErr.Error())
@@ -241,7 +241,7 @@ func (w *workerImpl) waitForTxConfirmation(tx *repository.SequenceTx) (int32, er
 
 // waitForTargetHeight waits for target height
 // and on each height checking its checks that none of confirmed txs was not pulled out from the blockchain
-func (w *workerImpl) waitForTargetHeight(targetHeight int32, seqID int64, confirmedTxIDs []string) error {
+func (w *workerImpl) waitForTargetHeight(targetHeight int32, seqID int64, confirmedTxIDs []string) ErrorWithReason {
 	currentHeight, wavesErr := w.nodeInteractor.GetCurrentHeight()
 	if wavesErr != nil {
 		w.logger.Error("error occurred while getting current height", zap.Error(wavesErr))

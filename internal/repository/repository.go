@@ -150,7 +150,7 @@ type Repository interface {
 	GetHangingSequenceIds(ttl time.Duration) ([]int64, error)
 	CreateSequence(txs []TxWithIDDto) (int64, error)
 	SetSequenceStateByID(sequenceID int64, newState State) error
-	SetSequenceErrorStateByID(sequenceID int64, err error) error
+	SetSequenceErrorStateByID(sequenceID int64, errorMessage string) error
 	SetSequenceTxState(tx *SequenceTx, newState TransactionState) error
 	SetSequenceTxConfirmedState(tx *SequenceTx, height int32) error
 	SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error
@@ -236,8 +236,8 @@ func (s *repoImpl) SetSequenceStateByID(sequenceID int64, newState State) error 
 	return err
 }
 
-func (s *repoImpl) SetSequenceErrorStateByID(sequenceID int64, e error) error {
-	_, err := s.Conn.Exec("update sequences set state=?0, error_message=?1, updated_at=NOW() where id=?2", StateError, e.Error(), sequenceID)
+func (s *repoImpl) SetSequenceErrorStateByID(sequenceID int64, errorMessage string) error {
+	_, err := s.Conn.Exec("update sequences set state=?0, error_message=?1, updated_at=NOW() where id=?2", StateError, errorMessage, sequenceID)
 	return err
 }
 

@@ -11,7 +11,7 @@ import (
 )
 
 type workerError struct {
-	Err        error
+	Err        worker.ErrorWithReason
 	SequenceID int64
 }
 
@@ -95,7 +95,7 @@ func (d *dispatcherImpl) RunLoop() error {
 			case worker.NonRecoverableError:
 				d.logger.Debug("non-recoverable error", zap.String("message", e.Err.Error()))
 
-				if err := d.repo.SetSequenceErrorStateByID(e.SequenceID, e.Err); err != nil {
+				if err := d.repo.SetSequenceErrorStateByID(e.SequenceID, e.Err.Reason()); err != nil {
 					d.logger.Error("error occured while setting sequence error state", zap.Error(err))
 					return err
 				}
