@@ -153,8 +153,8 @@ type Repository interface {
 	SetSequenceErrorStateByID(sequenceID int64, err error) error
 	SetSequenceTxState(tx *SequenceTx, newState TransactionState) error
 	SetSequenceTxConfirmedState(tx *SequenceTx, height int32) error
-	SetSequenceTxErrorState(tx *SequenceTx, errorMessage string) error
 	SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error
+	SetSequenceTxErrorMessage(tx *SequenceTx, errorMessage string) error
 }
 
 type repoImpl struct {
@@ -251,12 +251,12 @@ func (s *repoImpl) SetSequenceTxConfirmedState(tx *SequenceTx, height int32) err
 	return err
 }
 
-func (s *repoImpl) SetSequenceTxErrorState(tx *SequenceTx, errorMessage string) error {
-	_, err := s.Conn.Exec("update sequences_txs set state=?0, error_message=?1, updated_at=NOW() where sequence_id=?2 and tx_id=?3", TransactionStateError, errorMessage, tx.SequenceID, tx.ID)
+func (s *repoImpl) SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error {
+	_, err := s.Conn.Exec("update sequences_txs set state=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence>=(select position_in_sequence from sequences_txs where sequence_id=?1 and tx_id=?2)", newState, sequenceID, txID)
 	return err
 }
 
-func (s *repoImpl) SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error {
-	_, err := s.Conn.Exec("update sequences_txs set state=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence>=(select position_in_sequence from sequences_txs where sequence_id=?1 and tx_id=?2)", newState, sequenceID, txID)
+func (s *repoImpl) SetSequenceTxErrorMessage(tx *SequenceTx, errorMessage string) error {
+	_, err := s.Conn.Exec("update sequences_txs set error_message=?0, updated_at=NOW() where sequence_id=?1 and tx_id=?2", errorMessage, tx.SequenceID, tx.ID)
 	return err
 }

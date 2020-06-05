@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"fmt"
 	"regexp"
 	"time"
 
@@ -187,9 +186,14 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) error {
 	if !validationResult.IsValid {
 		w.logger.Debug("invalid tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
 
-		// check transaction timestamp error
+		// check where error is about transaction timestamp
 		isTimestampError := transactionTimestampErrorRE.MatchString(validationResult.ErrorMessage)
 		if !isTimestampError {
+			if err := w.repo.SetSequenceTxErrorMessage(tx, validationResult.ErrorMessage); err != nil {
+				w.logger.Error("error occured while setting tx error message", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID), zap.String("error_message", validationResult.ErrorMessage))
+				return NewFatalError(err.Error())
+			}
+
 			if err := w.nodeInteractor.WaitForNextHeight(); err != nil {
 				return NewRecoverableError(err.Error())
 			}
@@ -197,12 +201,16 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) error {
 			return w.processTx(tx)
 		}
 
-		if err := w.repo.SetSequenceTxErrorState(tx, validationResult.ErrorMessage); err != nil {
+		if err := w.repo.SetSequenceTxState(tx, repository.TransactionStateError); err != nil {
 			w.logger.Error("error occured while setting tx error state", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
 			return NewFatalError(err.Error())
 		}
 
-		return NewNonRecoverableError(fmt.Sprintf("tx %s is invalid", tx.ID))
+		errorMessage := validationResult.ErrorMessage
+		if len(tx.ErrorMessage) > 0 {
+			errorMessage = tx.ErrorMessage
+		}
+		return NewNonRecoverableError(errorMessage)
 	}
 
 	return nil
