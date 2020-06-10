@@ -143,11 +143,16 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx) ErrorWithReason {
 
 		fallthrough
 	case repository.TransactionStateUnconfirmed:
-		w.logger.Debug("wait for tx", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("tx_id", tx.ID))
+		w.logger.Debug("wait for tx confirmation", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("tx_id", tx.ID))
 
 		height, err := w.waitForTxConfirmation(tx.ID)
 		if err != nil {
-			return err
+			if err.Code() == node.TxNotFoundError {
+				if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStatePending); err != nil {
+					return NewFatalError(err.Error())
+				}
+			}
+			return NewRecoverableError(err.Error())
 		}
 
 		if err := w.repo.SetSequenceTxConfirmedState(tx.SequenceID, tx.PositionInSequence, height); err != nil {
@@ -228,10 +233,10 @@ func (w *workerImpl) broadcastTx(tx *repository.SequenceTx) ErrorWithReason {
 	return nil
 }
 
-func (w *workerImpl) waitForTxConfirmation(txID string) (int32, ErrorWithReason) {
+func (w *workerImpl) waitForTxConfirmation(txID string) (int32, node.Error) {
 	height, wavesErr := w.nodeInteractor.WaitForTxStatus(txID, node.TransactionStatusConfirmed)
 	if wavesErr != nil {
-		return 0, NewRecoverableError(wavesErr.Error())
+		return 0, wavesErr
 	}
 	return height, nil
 }

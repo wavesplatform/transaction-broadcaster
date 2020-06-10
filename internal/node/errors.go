@@ -6,6 +6,7 @@ const (
 	BroadcastServerError
 	GetTxStatusError
 	WaitForTxStatusTimeoutError
+	TxNotFoundError
 	InternalError = 999
 )
 

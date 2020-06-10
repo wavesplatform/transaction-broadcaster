@@ -223,6 +223,8 @@ func (r *impl) WaitForTxStatus(txID string, waitForStatus TransactionStatus) (in
 
 		if status.Status == waitForStatus {
 			return status.Height, nil
+		} else if status.Status == TransactionStatusNotFound {
+			return 0, NewError(TxNotFoundError, "tx not found")
 		}
 
 		now := time.Now()

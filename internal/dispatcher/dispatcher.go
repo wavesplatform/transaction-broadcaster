@@ -2,6 +2,8 @@ package dispatcher
 
 import (
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wavesplatform/transaction-broadcaster/internal/log"
@@ -39,6 +41,10 @@ type dispatcherImpl struct {
 	sequenceTTL                         time.Duration
 
 	worker workerParams
+
+	mutex                    *sync.Mutex
+	sequencesUnderProcessing map[int64]bool
+	workersCounter           int64
 }
 
 // New returns instance of Dispatcher interface implementation
@@ -62,6 +68,9 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 			heightsAfterLastTx:     heightsAfterLastTx,
 			waitForNextHeightDelay: waitForNextHeightDelay,
 		},
+
+		mutex:                    &sync.Mutex{},
+		sequencesUnderProcessing: make(map[int64]bool),
 	}
 }
 
@@ -115,20 +124,31 @@ func (d *dispatcherImpl) RunLoop() error {
 			}
 		case <-ticker.C:
 			d.logger.Debug("next ticker tick")
-			hangingSequenceIds, err := d.repo.GetHangingSequenceIds(d.sequenceTTL)
+
+			// in case when 2+ instances will be running and at some moment all but one will be closed
+			// it needs to take over hanging sequences
+			var sequenceIDsUnderProcessing []int64
+			for seqID := range d.sequencesUnderProcessing {
+				sequenceIDsUnderProcessing = append(sequenceIDsUnderProcessing, seqID)
+			}
+			hangingSequenceIds, err := d.repo.GetHangingSequenceIds(d.sequenceTTL, sequenceIDsUnderProcessing)
 			if err != nil {
 				d.logger.Error("error occured while getting hangins sequence ids", zap.Error(err))
 				return err
 			}
 
-			for _, seqID := range hangingSequenceIds {
-				// refresh sequence status
-				if err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
-					d.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
-					return err
-				}
+			if len(hangingSequenceIds) > 0 {
+				d.logger.Debug("processing hanging sequences", zap.Int("count", len(hangingSequenceIds)), zap.Int64s("hanging_sequence_ids", hangingSequenceIds))
 
-				d.runWorker(seqID)
+				for _, seqID := range hangingSequenceIds {
+					// refresh sequence status
+					if err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
+						d.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
+						return err
+					}
+
+					d.runWorker(seqID)
+				}
 			}
 		default:
 			// nothing to do, just wait for the next message
@@ -137,15 +157,31 @@ func (d *dispatcherImpl) RunLoop() error {
 }
 
 func (d *dispatcherImpl) runWorker(seqID int64) {
-	w := worker.New(strconv.FormatInt(time.Now().Unix(), 10), d.repo, d.nodeInteractor, d.worker.txProcessingTTL, d.worker.heightsAfterLastTx, d.worker.waitForNextHeightDelay)
+	newWorkersCount := atomic.AddInt64(&d.workersCounter, 1)
+
+	w := worker.New(strconv.FormatInt(newWorkersCount, 10), d.repo, d.nodeInteractor, d.worker.txProcessingTTL, d.worker.heightsAfterLastTx, d.worker.waitForNextHeightDelay)
+
 	go func(seqID int64) {
-		if err := w.Run(seqID); err != nil {
+		d.mutex.Lock()
+		d.sequencesUnderProcessing[seqID] = true
+		d.mutex.Unlock()
+
+		err := w.Run(seqID)
+
+		atomic.AddInt64(&d.workersCounter, -1)
+
+		d.mutex.Lock()
+		delete(d.sequencesUnderProcessing, seqID)
+		d.mutex.Unlock()
+
+		if err != nil {
 			d.errorsChan <- workerError{
 				Err:        err,
 				SequenceID: seqID,
 			}
 			return
 		}
+
 		d.completedSequenceChan <- seqID
 	}(seqID)
 }

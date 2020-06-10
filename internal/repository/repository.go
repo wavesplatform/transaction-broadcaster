@@ -147,7 +147,7 @@ func (st TransactionState) MarshalJSON() ([]byte, error) {
 type Repository interface {
 	GetSequenceByID(id int64) (*Sequence, error)
 	GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error)
-	GetHangingSequenceIds(ttl time.Duration) ([]int64, error)
+	GetHangingSequenceIds(ttl time.Duration, excluding []int64) ([]int64, error)
 	CreateSequence(txs []string) (int64, error)
 	SetSequenceStateByID(sequenceID int64, newState State) error
 	SetSequenceErrorStateByID(sequenceID int64, errorMessage string) error
@@ -194,10 +194,16 @@ func (s *repoImpl) GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error) {
 
 // GetHangingSequenceIds tries to get hanging sequence ids
 // Hanging sequences - with state=processing and not updated for ttl.
-func (s *repoImpl) GetHangingSequenceIds(ttl time.Duration) ([]int64, error) {
+func (s *repoImpl) GetHangingSequenceIds(ttl time.Duration, excluding []int64) ([]int64, error) {
 	var ids []int64
 
-	_, err := s.Conn.Query(&ids, "select s.id from sequences s where state=?0 and updated_at < NOW() - interval '?1 seconds' order by id asc", StateProcessing, ttl.Seconds())
+	var err error
+	if len(excluding) > 0 {
+		_, err = s.Conn.Query(&ids, "select s.id from sequences s where s.state=?0 and s.updated_at < NOW() - interval '?1 seconds' and s.id not in (?2) order by s.id asc", StateProcessing, ttl.Seconds(), pg.In(excluding))
+	} else {
+		_, err = s.Conn.Query(&ids, "select s.id from sequences s where s.state=?0 and s.updated_at < NOW() - interval '?1 seconds' order by s.id asc", StateProcessing, ttl.Seconds())
+	}
+
 	if err != nil {
 		return nil, err
 	}
