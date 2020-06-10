@@ -36,7 +36,7 @@ type transactionStatusResponse struct {
 	Confirmations int32
 }
 
-type transactionsStatusResponse []transactionStatusResponse
+type transactionStatusesResponse []transactionStatusResponse
 
 type blocksHeightResponse struct {
 	Height int32
@@ -287,7 +287,7 @@ func (r *impl) GetTxsAvailability(txIDs []string) (Availability, Error) {
 		return nil, NewError(InternalError, errorResponseDto.Message)
 	}
 
-	txStatuses := transactionsStatusResponse{}
+	txStatuses := transactionStatusesResponse{}
 	if err = json.NewDecoder(resp.Body).Decode(&txStatuses); err != nil {
 		return nil, NewError(InternalError, err.Error())
 	}
@@ -319,10 +319,10 @@ func (r *impl) getTxStatus(txID string) (*transactionStatusResponse, Error) {
 		return nil, NewError(GetTxStatusError, resp.Status)
 	}
 
-	txStatus := transactionsStatusResponse{}
-	if err = json.NewDecoder(resp.Body).Decode(&txStatus); err != nil {
+	txStatuses := transactionStatusesResponse{}
+	if err = json.NewDecoder(resp.Body).Decode(&txStatuses); err != nil {
 		return nil, NewError(InternalError, err.Error())
 	}
 
-	return &txStatus[0], nil
+	return &txStatuses[0], nil
 }
