@@ -13,25 +13,26 @@ const (
 	_internalServerError = 10500
 )
 
-// error ...
+type errorDetails map[string]interface{}
+
 type apiErrorImpl struct {
 	code    uint16
-	details map[string]string // at this moment there is only string at the value type
+	details errorDetails
 }
 
 // Error represents API error
 type Error interface {
 	Error() string
 	Message() string
-	Details() map[string]string
+	Details() errorDetails
 	Code() uint16
 }
 
 // HTTPError represents single api http error
 type HTTPError struct {
-	Code    uint16            `json:"code"`
-	Message string            `json:"message"`
-	Details map[string]string `json:"details,omitempty"`
+	Code    uint16       `json:"code"`
+	Message string       `json:"message"`
+	Details errorDetails `json:"details,omitempty"`
 }
 
 // HTTPErrors represents array of http errors
@@ -40,23 +41,30 @@ type HTTPErrors struct {
 }
 
 // NewError returns instance of Error interface implementation
-func NewError(code uint16, details map[string]string) Error {
+func NewError(code uint16, details errorDetails) Error {
 	return &apiErrorImpl{code: code, details: details}
 }
 
 // MissingRequiredParameter ...
 func MissingRequiredParameter(parameterName string) Error {
-	details := map[string]string{
+	details := errorDetails{
 		"parameter": parameterName,
 	}
 	return NewError(_missingRequiredParameter, details)
 }
 
 // InvalidParameterValue ...
-func InvalidParameterValue(parameterName string, reason string) Error {
-	details := map[string]string{
+func InvalidParameterValue(parameterName string, reason string, meta errorDetails) Error {
+	details := errorDetails{
 		"parameter": parameterName,
 		"reason":    reason,
+	}
+	if meta != nil {
+		for key, value := range meta {
+			if key != "parameter" && key != "reason" {
+				details[key] = value
+			}
+		}
 	}
 	return NewError(_invalidParameterValue, details)
 }
@@ -98,7 +106,7 @@ func (err *apiErrorImpl) Message() string {
 }
 
 // Details ...
-func (err *apiErrorImpl) Details() map[string]string {
+func (err *apiErrorImpl) Details() errorDetails {
 	return err.details
 }
 

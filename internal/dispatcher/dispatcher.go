@@ -1,6 +1,7 @@
 package dispatcher
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/wavesplatform/transaction-broadcaster/internal/log"
@@ -136,7 +137,7 @@ func (d *dispatcherImpl) RunLoop() error {
 }
 
 func (d *dispatcherImpl) runWorker(seqID int64) {
-	w := worker.New(string(time.Now().Unix()), d.repo, d.nodeInteractor, d.worker.txProcessingTTL, d.worker.heightsAfterLastTx, d.worker.waitForNextHeightDelay)
+	w := worker.New(strconv.FormatInt(time.Now().Unix(), 10), d.repo, d.nodeInteractor, d.worker.txProcessingTTL, d.worker.heightsAfterLastTx, d.worker.waitForNextHeightDelay)
 	go func(seqID int64) {
 		if err := w.Run(seqID); err != nil {
 			d.errorsChan <- workerError{

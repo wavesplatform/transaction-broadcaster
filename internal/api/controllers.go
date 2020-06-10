@@ -2,11 +2,10 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
+	"crypto/md5"
+	"encoding/hex"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wavesplatform/transaction-broadcaster/internal/node"
@@ -25,7 +24,7 @@ func getSequence(logger *zap.Logger, renderError errorRenderer, repo repository.
 
 		id, err := strconv.ParseInt(rawID, 10, 64)
 		if err != nil {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("id", err.Error()))
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("id", err.Error(), nil))
 			return
 		}
 
@@ -60,35 +59,30 @@ func createSequence(logger *zap.Logger, renderError errorRenderer, repo reposito
 
 		transactions, err := parseTransactions(buf.String())
 		if err != nil {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "Invalid request."))
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "Invalid request.", nil))
 			return
 		}
 
 		if len(transactions) == 0 {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are not any transactions in the request."))
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are not any transactions in the request.", nil))
 			return
 		}
 
-		var txs []repository.TxWithIDDto
-		// for txID uniqueness checking
-		var txIDs = make(map[string]bool)
-		t := txDto{}
-		for _, tx := range transactions {
-			if err := json.NewDecoder(strings.NewReader(tx)).Decode(&t); err != nil {
-				logger.Error("cannot decode one of the sequence's transaction", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", fmt.Sprintf("Error occurred while decoding transactions: %s.", err.Error())))
-				return
-			}
-			if _, ok := txIDs[t.ID]; ok {
+		var txs []string
+		// for tx uniqueness checking
+		var txHashes = make(map[string]int)
+		for idx, tx := range transactions {
+			txHash := md5.Sum([]byte(tx))
+			txHashString := hex.EncodeToString(txHash[:])
+			if _, ok := txHashes[txHashString]; ok {
 				logger.Error("there are duplicates in the transactions array", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are duplicates in the transactions array"))
+				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are duplicates in the transactions array", errorDetails{
+					"duplicates": []int{txHashes[txHashString], idx},
+				}))
 				return
 			}
-			txs = append(txs, repository.TxWithIDDto{
-				ID: t.ID,
-				Tx: tx,
-			})
-			txIDs[t.ID] = true
+			txs = append(txs, tx)
+			txHashes[txHashString] = idx
 		}
 
 		// validate the first tx
@@ -99,7 +93,9 @@ func createSequence(logger *zap.Logger, renderError errorRenderer, repo reposito
 			return
 		}
 		if !validationResult.IsValid {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", fmt.Sprintf("The first transaction is invalid: %s.", validationResult.ErrorMessage)))
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "The first transaction is invalid.", errorDetails{
+				"errorMessage": validationResult.ErrorMessage,
+			}))
 			return
 		}
 

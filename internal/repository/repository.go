@@ -50,7 +50,7 @@ type SequenceTx struct {
 	State              TransactionState `json:"state"`
 	Height             int32            `json:"height"`
 	ErrorMessage       string           `json:"error_message,omitempty"`
-	PositionInSequence uint16           `json:"position_in_sequence"`
+	PositionInSequence int16            `json:"position_in_sequence"`
 	Tx                 string           `json:"tx"`
 	CreatedAt          time.Time        `json:"created_at"`
 	UpdatedAt          time.Time        `json:"updated_at"`
@@ -148,13 +148,14 @@ type Repository interface {
 	GetSequenceByID(id int64) (*Sequence, error)
 	GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error)
 	GetHangingSequenceIds(ttl time.Duration) ([]int64, error)
-	CreateSequence(txs []TxWithIDDto) (int64, error)
+	CreateSequence(txs []string) (int64, error)
 	SetSequenceStateByID(sequenceID int64, newState State) error
 	SetSequenceErrorStateByID(sequenceID int64, errorMessage string) error
-	SetSequenceTxState(tx *SequenceTx, newState TransactionState) error
-	SetSequenceTxConfirmedState(tx *SequenceTx, height int32) error
+	SetSequenceTxID(sequenceID int64, positionInSequence int16, txID string) error
+	SetSequenceTxState(sequenceID int64, positionInSequence int16, newState TransactionState) error
+	SetSequenceTxConfirmedState(sequenceID int64, positionInSequence int16, height int32) error
 	SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error
-	SetSequenceTxErrorMessage(tx *SequenceTx, errorMessage string) error
+	SetSequenceTxErrorMessage(sequenceID int64, positionInSequence int16, errorMessage string) error
 }
 
 type repoImpl struct {
@@ -204,7 +205,7 @@ func (s *repoImpl) GetHangingSequenceIds(ttl time.Duration) ([]int64, error) {
 	return ids, nil
 }
 
-func (s *repoImpl) CreateSequence(txs []TxWithIDDto) (int64, error) {
+func (s *repoImpl) CreateSequence(txs []string) (int64, error) {
 	sequenceID := int64(0)
 
 	err := s.Conn.RunInTransaction(func(tr *pg.Tx) error {
@@ -214,8 +215,8 @@ func (s *repoImpl) CreateSequence(txs []TxWithIDDto) (int64, error) {
 
 		}
 
-		for i, t := range txs {
-			_, err := tr.Exec("insert into sequences_txs(sequence_id, tx_id, state, position_in_sequence, tx) values(?0, ?1, ?2, ?3, ?4);", sequenceID, t.ID, TransactionStatePending, i, t.Tx)
+		for i, tx := range txs {
+			_, err := tr.Exec("insert into sequences_txs(sequence_id, state, position_in_sequence, tx) values(?0, ?1, ?2, ?4);", sequenceID, TransactionStatePending, i, tx)
 			if err != nil {
 				return err
 			}
@@ -241,13 +242,18 @@ func (s *repoImpl) SetSequenceErrorStateByID(sequenceID int64, errorMessage stri
 	return err
 }
 
-func (s *repoImpl) SetSequenceTxState(tx *SequenceTx, newState TransactionState) error {
-	_, err := s.Conn.Exec("update sequences_txs set state=?0, updated_at=NOW() where sequence_id=?1 and tx_id=?2", newState, tx.SequenceID, tx.ID)
+func (s *repoImpl) SetSequenceTxID(sequenceID int64, positionInSequence int16, txID string) error {
+	_, err := s.Conn.Exec("update sequences_txs set id=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence=?2", txID, sequenceID, positionInSequence)
 	return err
 }
 
-func (s *repoImpl) SetSequenceTxConfirmedState(tx *SequenceTx, height int32) error {
-	_, err := s.Conn.Exec("update sequences_txs set state=?0, height=?1, updated_at=NOW() where sequence_id=?2 and tx_id=?3", TransactionStateConfirmed, height, tx.SequenceID, tx.ID)
+func (s *repoImpl) SetSequenceTxState(sequenceID int64, positionInSequence int16, newState TransactionState) error {
+	_, err := s.Conn.Exec("update sequences_txs set state=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence=?2", newState, sequenceID, positionInSequence)
+	return err
+}
+
+func (s *repoImpl) SetSequenceTxConfirmedState(sequenceID int64, positionInSequence int16, height int32) error {
+	_, err := s.Conn.Exec("update sequences_txs set state=?0, height=?1, updated_at=NOW() where sequence_id=?2 and position_in_sequence=?3", TransactionStateConfirmed, height, sequenceID, positionInSequence)
 	return err
 }
 
@@ -256,7 +262,7 @@ func (s *repoImpl) SetSequenceTxsStateAfter(sequenceID int64, txID string, newSt
 	return err
 }
 
-func (s *repoImpl) SetSequenceTxErrorMessage(tx *SequenceTx, errorMessage string) error {
-	_, err := s.Conn.Exec("update sequences_txs set error_message=?0, updated_at=NOW() where sequence_id=?1 and tx_id=?2", errorMessage, tx.SequenceID, tx.ID)
+func (s *repoImpl) SetSequenceTxErrorMessage(sequenceID int64, positionInSequence int16, errorMessage string) error {
+	_, err := s.Conn.Exec("update sequences_txs set error_message=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence=?2", errorMessage, sequenceID, positionInSequence)
 	return err
 }

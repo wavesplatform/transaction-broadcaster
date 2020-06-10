@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS sequences (
 
 CREATE TABLE IF NOT EXISTS sequences_txs (
     sequence_id BIGINT NOT NULL REFERENCES sequences (id) ON DELETE CASCADE,
-    tx_id VARCHAR NOT NULL,
+    tx_id VARCHAR,
     state SMALLINT NOT NULL,
     height INT DEFAULT NULL,
     error_message VARCHAR DEFAULT NULL,
