@@ -249,7 +249,7 @@ func (s *repoImpl) SetSequenceErrorStateByID(sequenceID int64, errorMessage stri
 }
 
 func (s *repoImpl) SetSequenceTxID(sequenceID int64, positionInSequence int16, txID string) error {
-	_, err := s.Conn.Exec("update sequences_txs set id=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence=?2", txID, sequenceID, positionInSequence)
+	_, err := s.Conn.Exec("update sequences_txs set tx_id=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence=?2", txID, sequenceID, positionInSequence)
 	return err
 }
 

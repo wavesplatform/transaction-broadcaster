@@ -17,6 +17,6 @@ CREATE TABLE IF NOT EXISTS sequences_txs (
     tx VARCHAR NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT sequences_txs_pk PRIMARY KEY (sequence_id, tx_id)
+    CONSTRAINT sequences_txs_pk PRIMARY KEY (sequence_id, position_in_sequence)
 );
  
