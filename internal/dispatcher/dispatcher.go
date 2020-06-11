@@ -116,7 +116,7 @@ func (d *dispatcherImpl) RunLoop() error {
 			default:
 			}
 		case seqID := <-d.completedSequenceChan:
-			d.logger.Debug("got new completed sequence")
+			d.logger.Debug("got new completed sequence", zap.Int64("sequence_id", seqID))
 
 			if err := d.repo.SetSequenceStateByID(seqID, repository.StateDone); err != nil {
 				d.logger.Error("error occured while setting sequence done state", zap.Error(err))

@@ -79,7 +79,7 @@ func (w *workerImpl) Run(sequenceID int64) ErrorWithReason {
 			}
 			fallthrough
 		case repository.TransactionStatePending, repository.TransactionStateValidated, repository.TransactionStateUnconfirmed:
-			// will mutate tx - sets ID
+			// will mutate tx - sets ID and height
 			if err := w.processTx(tx); err != nil {
 				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
 				return err
@@ -108,6 +108,7 @@ func (w *workerImpl) Run(sequenceID int64) ErrorWithReason {
 	return nil
 }
 
+// notes: mutate tx - sets State, ID and height
 func (w *workerImpl) processTx(tx *repository.SequenceTx) ErrorWithReason {
 	switch tx.State {
 	case repository.TransactionStatePending:
@@ -116,6 +117,8 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx) ErrorWithReason {
 		if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStateProcessing); err != nil {
 			return NewFatalError(err.Error())
 		}
+		tx.State = repository.TransactionStateProcessing
+
 		fallthrough
 	case repository.TransactionStateProcessing:
 		w.logger.Debug("validate tx", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
@@ -127,6 +130,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx) ErrorWithReason {
 		if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStateValidated); err != nil {
 			return NewFatalError(err.Error())
 		}
+		tx.State = repository.TransactionStateValidated
 
 		fallthrough
 	case repository.TransactionStateValidated:
@@ -140,6 +144,7 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx) ErrorWithReason {
 		if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStateUnconfirmed); err != nil {
 			return NewFatalError(err.Error())
 		}
+		tx.State = repository.TransactionStateUnconfirmed
 
 		fallthrough
 	case repository.TransactionStateUnconfirmed:
@@ -158,6 +163,8 @@ func (w *workerImpl) processTx(tx *repository.SequenceTx) ErrorWithReason {
 		if err := w.repo.SetSequenceTxConfirmedState(tx.SequenceID, tx.PositionInSequence, height); err != nil {
 			return NewFatalError(err.Error())
 		}
+		tx.State = repository.TransactionStateConfirmed
+		tx.Height = height
 
 		fallthrough
 	case repository.TransactionStateConfirmed:
@@ -227,7 +234,6 @@ func (w *workerImpl) broadcastTx(tx *repository.SequenceTx) ErrorWithReason {
 	if err := w.repo.SetSequenceTxID(tx.SequenceID, tx.PositionInSequence, txID); err != nil {
 		return NewFatalError(err.Error())
 	}
-
 	tx.ID = txID
 
 	return nil
