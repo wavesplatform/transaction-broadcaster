@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -24,7 +25,7 @@ func getSequence(logger *zap.Logger, renderError errorRenderer, repo repository.
 
 		id, err := strconv.ParseInt(rawID, 10, 64)
 		if err != nil {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("id", err.Error(), nil))
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("id", fmt.Sprintf("Error occured while parsing id: %s.", err.Error()), nil))
 			return
 		}
 
@@ -76,7 +77,7 @@ func createSequence(logger *zap.Logger, renderError errorRenderer, repo reposito
 			txHashString := hex.EncodeToString(txHash[:])
 			if _, ok := txHashes[txHashString]; ok {
 				logger.Error("there are duplicates in the transactions array", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are duplicates in the transactions array", errorDetails{
+				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are duplicates in the transactions array.", errorDetails{
 					"duplicates": []int{txHashes[txHashString], idx},
 				}))
 				return
