@@ -127,10 +127,13 @@ func (d *dispatcherImpl) RunLoop() error {
 
 			// in case when 2+ instances will be running and at some moment all but one will be closed
 			// it needs to take over hanging sequences
+			d.mutex.Lock()
 			var sequenceIDsUnderProcessing []int64
 			for seqID := range d.sequencesUnderProcessing {
 				sequenceIDsUnderProcessing = append(sequenceIDsUnderProcessing, seqID)
 			}
+			d.mutex.Unlock()
+
 			hangingSequenceIds, err := d.repo.GetHangingSequenceIds(d.sequenceTTL, sequenceIDsUnderProcessing)
 			if err != nil {
 				d.logger.Error("error occured while getting hangins sequence ids", zap.Error(err))
