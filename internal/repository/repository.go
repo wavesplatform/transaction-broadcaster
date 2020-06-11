@@ -222,7 +222,7 @@ func (s *repoImpl) CreateSequence(txs []string) (int64, error) {
 		}
 
 		for i, tx := range txs {
-			_, err := tr.Exec("insert into sequences_txs(sequence_id, state, position_in_sequence, tx) values(?0, ?1, ?2, ?4);", sequenceID, TransactionStatePending, i, tx)
+			_, err := tr.Exec("insert into sequences_txs(sequence_id, state, position_in_sequence, tx) values(?0, ?1, ?2, ?3);", sequenceID, TransactionStatePending, i, tx)
 			if err != nil {
 				return err
 			}
