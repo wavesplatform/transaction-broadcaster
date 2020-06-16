@@ -6,17 +6,17 @@ import (
 
 const (
 	// validation errors
-	_missingRequiredParameter = 10200
-	_invalidParameterValue    = 10201
+	_missingRequiredParameter = 950200
+	_invalidParameterValue    = 950201
 
 	// internal server errors
-	_internalServerError = 10500
+	_internalServerError = 950500
 )
 
 type errorDetails map[string]interface{}
 
 type apiErrorImpl struct {
-	code    uint16
+	code    uint32
 	details errorDetails
 }
 
@@ -25,12 +25,12 @@ type Error interface {
 	Error() string
 	Message() string
 	Details() errorDetails
-	Code() uint16
+	Code() uint32
 }
 
 // HTTPError represents single api http error
 type HTTPError struct {
-	Code    uint16       `json:"code"`
+	Code    uint32       `json:"code"`
 	Message string       `json:"message"`
 	Details errorDetails `json:"details,omitempty"`
 }
@@ -41,7 +41,7 @@ type HTTPErrors struct {
 }
 
 // NewError returns instance of Error interface implementation
-func NewError(code uint16, details errorDetails) Error {
+func NewError(code uint32, details errorDetails) Error {
 	return &apiErrorImpl{code: code, details: details}
 }
 
@@ -111,6 +111,6 @@ func (err *apiErrorImpl) Details() errorDetails {
 }
 
 // Code ...
-func (err *apiErrorImpl) Code() uint16 {
+func (err *apiErrorImpl) Code() uint32 {
 	return err.code
 }
