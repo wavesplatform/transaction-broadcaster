@@ -238,19 +238,26 @@ func (r *impl) WaitForTxStatus(txID string, waitForStatus TransactionStatus) (in
 
 // WaitForNHeights waits for n heights in the blockchain
 func (r *impl) WaitForTargetHeight(targetHeight int32) Error {
-	ticker := time.NewTicker(r.waitForNextHeightDelay)
-	for range ticker.C {
-		newHeight, err := r.GetCurrentHeight()
-		if err != nil {
-			return NewError(InternalError, err.Error())
-		}
+	done := make(chan bool, 1)
 
-		if newHeight > targetHeight {
-			ticker.Stop()
+	ticker := time.NewTicker(r.waitForNextHeightDelay)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return nil
+		case <-ticker.C:
+			newHeight, err := r.GetCurrentHeight()
+			if err != nil {
+				return NewError(InternalError, err.Error())
+			}
+
+			if newHeight > targetHeight {
+				done <- true
+			}
 		}
 	}
-
-	return nil
 }
 
 // WaitForNextHeight waits for the next height in the blockchain
