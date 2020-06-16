@@ -194,7 +194,17 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 
 		// check where error is about transaction timestamp
 		isTimestampError := transactionTimestampErrorRE.MatchString(validationResult.ErrorMessage)
-		if !isTimestampError && !w.isTxOutdated(tx.Tx) {
+
+		isOutdated, err := w.isTxOutdated(tx.Tx)
+		if err != nil {
+			return NewNonRecoverableError(err.Error())
+		}
+
+		if isOutdated {
+			w.logger.Debug("tx is outdated (local check)", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+		}
+
+		if !isTimestampError && !isOutdated {
 			if err := w.repo.SetSequenceTxErrorMessage(tx.SequenceID, tx.PositionInSequence, validationResult.ErrorMessage); err != nil {
 				w.logger.Error("error occured while setting tx error message", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("error_message", validationResult.ErrorMessage))
 				return NewFatalError(err.Error())
@@ -216,6 +226,7 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 		if len(tx.ErrorMessage) > 0 {
 			errorMessage = tx.ErrorMessage
 		}
+
 		return NewNonRecoverableError(errorMessage)
 	}
 
@@ -323,13 +334,13 @@ func (w *workerImpl) checkTxsAvailability(sequenceID int64, confirmedTxIDs []str
 
 // isTxOutdated retrieves timestamp from tx (via parsing json)
 // and checks whether tx is outdated
-func (w *workerImpl) isTxOutdated(tx string) bool {
+func (w *workerImpl) isTxOutdated(tx string) (bool, error) {
 	t := txWithTimestamp{}
 
-	json.Unmarshal([]byte(tx), &t)
-	if time.Now().Sub(t.Timestamp) > w.txOutdateTime {
-		return true
+	err := json.Unmarshal([]byte(tx), &t)
+	if err != nil {
+		return false, err
 	}
 
-	return false
+	return time.Now().Sub(t.Timestamp) >= w.txOutdateTime, nil
 }
