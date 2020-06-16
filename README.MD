@@ -75,6 +75,7 @@
 | 12 | `WAVES_WAIT_FOR_NEXT_HEIGHT_DELAY` | number | 1000 | Number in ms - time after which worker will check the blockchain height again |
 | 13 | `DISPATCHER_LOOP_DELAY` | number | 1000 | Number in ms - check for hanging sequences delay |
 | 14 | `DISPATCHER_SEQUENCE_TTL` | number | 5000 | Number in ms - in which time sequences in state `processing` were not updated and have to be reseted, and dispatcher will take them out |
-| 15 | `WORKER_TX_PROCESSING_TTL` | number | 3000 | Number in ms - after which time transactions in state `processing` were not updated and have to be retaken |
-| 16 | `WORKER_HEIGHTS_AFTER_LAST_TX` | number | 6 | Number - after which blocks number sequence is considered as done |
-| 17 | `WORKER_WAIT_FOR_NEXT_HEIGHT_DELAY` | number | 1000 | Number in ms - time after which worker will check the blockchain height again |
+| 15 | `WORKER_TX_OUTDATE_TIME` | number | 14400000 | Number in ms - after which time the service consider current processing transaction as outdated |
+| 16 | `WORKER_TX_PROCESSING_TTL` | number | 3000 | Number in ms - after which time transactions in state `processing` were not updated and have to be retaken |
+| 17 | `WORKER_HEIGHTS_AFTER_LAST_TX` | number | 6 | Number - after which blocks number sequence is considered as done |
+| 18 | `WORKER_WAIT_FOR_NEXT_HEIGHT_DELAY` | number | 1000 | Number in ms - time after which worker will check the blockchain height again |

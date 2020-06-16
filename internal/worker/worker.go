@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"regexp"
 	"time"
 
@@ -11,6 +12,10 @@ import (
 )
 
 var transactionTimestampErrorRE = regexp.MustCompile("Transaction timestamp \\d+ is more than \\d+ms")
+
+type txWithTimestamp struct {
+	Timestamp time.Time `json:"timestamp"`
+}
 
 // Worker represents worker interface
 type Worker interface {
@@ -24,10 +29,11 @@ type workerImpl struct {
 	txProcessingTTL        time.Duration
 	heightsAfterLastTx     int32
 	waitForNextHeightDelay time.Duration
+	txOutdateTime          time.Duration
 }
 
 // New returns instance of Worker interface implementation
-func New(workerID string, repo repository.Repository, nodeInteractor node.Interactor, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Worker {
+func New(workerID string, repo repository.Repository, nodeInteractor node.Interactor, txOutdateTime, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Worker {
 	logger := log.Logger.Named("worker-" + workerID)
 
 	return &workerImpl{
@@ -37,6 +43,7 @@ func New(workerID string, repo repository.Repository, nodeInteractor node.Intera
 		txProcessingTTL:        time.Duration(txProcessingTTL) * time.Millisecond,
 		heightsAfterLastTx:     heightsAfterLastTx,
 		waitForNextHeightDelay: time.Duration(waitForNextHeightDelay) * time.Millisecond,
+		txOutdateTime:          time.Duration(txOutdateTime) * time.Millisecond,
 	}
 }
 
@@ -187,7 +194,7 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 
 		// check where error is about transaction timestamp
 		isTimestampError := transactionTimestampErrorRE.MatchString(validationResult.ErrorMessage)
-		if !isTimestampError {
+		if !isTimestampError && !w.isTxOutdated(tx.Tx) {
 			if err := w.repo.SetSequenceTxErrorMessage(tx.SequenceID, tx.PositionInSequence, validationResult.ErrorMessage); err != nil {
 				w.logger.Error("error occured while setting tx error message", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("error_message", validationResult.ErrorMessage))
 				return NewFatalError(err.Error())
@@ -197,7 +204,7 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 				return NewRecoverableError(err.Error())
 			}
 
-			return w.processTx(tx)
+			return w.validateTx(tx)
 		}
 
 		if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStateError); err != nil {
@@ -312,4 +319,17 @@ func (w *workerImpl) checkTxsAvailability(sequenceID int64, confirmedTxIDs []str
 	}
 
 	return nil
+}
+
+// isTxOutdated retrieves timestamp from tx (via parsing json)
+// and checks whether tx is outdated
+func (w *workerImpl) isTxOutdated(tx string) bool {
+	t := txWithTimestamp{}
+
+	json.Unmarshal([]byte(tx), &t)
+	if time.Now().Sub(t.Timestamp) > w.txOutdateTime {
+		return true
+	}
+
+	return false
 }

@@ -41,7 +41,7 @@ func main() {
 
 	nodeInteractor := node.New(cfg.Node.NodeURL, cfg.Node.NodeAPIKey, cfg.Node.WaitForTxStatusDelay, cfg.Node.WaitForTxTimeout, cfg.Node.WaitForNextHeightDelay)
 
-	disp := dispatcher.New(repo, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
+	disp := dispatcher.New(repo, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxOutdateTime, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
 
 	go func() {
 		if err := disp.RunLoop(); err != nil {

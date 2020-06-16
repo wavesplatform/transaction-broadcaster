@@ -28,7 +28,7 @@ type Dispatcher interface {
 }
 
 type workerParams struct {
-	txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32
+	txOutdatedTime, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32
 }
 
 type dispatcherImpl struct {
@@ -48,7 +48,7 @@ type dispatcherImpl struct {
 }
 
 // New returns instance of Dispatcher interface implementation
-func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
+func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txOutdatedTime, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
 	logger := log.Logger.Named("dispatcher")
 	completedSequenceChan := make(chan int64)
 	errorsChan := make(chan workerError)
@@ -64,6 +64,7 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 		sequenceTTL:           time.Duration(sequenceTTL) * time.Millisecond,
 
 		worker: workerParams{
+			txOutdatedTime:         txOutdatedTime,
 			txProcessingTTL:        txProcessingTTL,
 			heightsAfterLastTx:     heightsAfterLastTx,
 			waitForNextHeightDelay: waitForNextHeightDelay,
@@ -162,7 +163,7 @@ func (d *dispatcherImpl) RunLoop() error {
 func (d *dispatcherImpl) runWorker(seqID int64) {
 	newWorkersCount := atomic.AddInt64(&d.workersCounter, 1)
 
-	w := worker.New(strconv.FormatInt(newWorkersCount, 10), d.repo, d.nodeInteractor, d.worker.txProcessingTTL, d.worker.heightsAfterLastTx, d.worker.waitForNextHeightDelay)
+	w := worker.New(strconv.FormatInt(newWorkersCount, 10), d.repo, d.nodeInteractor, d.worker.txOutdatedTime, d.worker.txProcessingTTL, d.worker.heightsAfterLastTx, d.worker.waitForNextHeightDelay)
 
 	go func(seqID int64) {
 		d.mutex.Lock()
