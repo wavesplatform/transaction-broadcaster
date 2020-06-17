@@ -157,6 +157,7 @@ type Repository interface {
 	SetSequenceTxConfirmedState(sequenceID int64, positionInSequence int16, height int32) error
 	SetSequenceTxsStateAfter(sequenceID int64, txID string, newState TransactionState) error
 	SetSequenceTxErrorMessage(sequenceID int64, positionInSequence int16, errorMessage string) error
+	ResetSequenceTxErrorMessage(sequenceID int64, positionInSequence int16) error
 }
 
 type repoImpl struct {
@@ -281,5 +282,10 @@ func (r *repoImpl) SetSequenceTxsStateAfter(sequenceID int64, txID string, newSt
 
 func (r *repoImpl) SetSequenceTxErrorMessage(sequenceID int64, positionInSequence int16, errorMessage string) error {
 	_, err := r.Conn.Exec("update sequences_txs set error_message=?0, updated_at=NOW() where sequence_id=?1 and position_in_sequence=?2", errorMessage, sequenceID, positionInSequence)
+	return err
+}
+
+func (r *repoImpl) ResetSequenceTxErrorMessage(sequenceID int64, positionInSequence int16) error {
+	_, err := r.Conn.Exec("update sequences_txs set error_message=null, updated_at=NOW() where sequence_id=?0 and position_in_sequence=?1", sequenceID, positionInSequence)
 	return err
 }

@@ -209,6 +209,7 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 				w.logger.Error("error occured while setting tx error message", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("error_message", validationResult.ErrorMessage))
 				return NewFatalError(err.Error())
 			}
+			tx.ErrorMessage = validationResult.ErrorMessage
 
 			if err := w.nodeInteractor.WaitForNextHeight(); err != nil {
 				return NewRecoverableError(err.Error())
@@ -229,6 +230,13 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 
 		return NewNonRecoverableError(errorMessage)
 	}
+
+	// tx is valid, reset error message that may have been set
+	if err := w.repo.ResetSequenceTxErrorMessage(tx.SequenceID, tx.PositionInSequence); err != nil {
+		w.logger.Error("error occured while resetting tx error message", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+		return NewFatalError(err.Error())
+	}
+	tx.ErrorMessage = ""
 
 	return nil
 }
