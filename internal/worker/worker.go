@@ -14,7 +14,7 @@ import (
 var transactionTimestampErrorRE = regexp.MustCompile("Transaction timestamp \\d+ is more than \\d+ms")
 
 type txWithTimestamp struct {
-	Timestamp time.Time `json:"timestamp"`
+	Timestamp int64 `json:"timestamp"`
 }
 
 // Worker represents worker interface
@@ -53,7 +53,7 @@ func (w *workerImpl) Run(sequenceID int64) ErrorWithReason {
 
 	txs, err := w.repo.GetSequenceTxsByID(sequenceID)
 	if err != nil {
-		w.logger.Error("error occurred while getting sequence txs", zap.Error(err))
+		w.logger.Error("error occurred while getting sequence txs", zap.Error(err), zap.Int64("sequence_id", sequenceID))
 		return NewFatalError(err.Error())
 	}
 
@@ -88,7 +88,7 @@ func (w *workerImpl) Run(sequenceID int64) ErrorWithReason {
 		case repository.TransactionStatePending, repository.TransactionStateValidated, repository.TransactionStateUnconfirmed:
 			// will mutate tx - sets ID and height
 			if err := w.processTx(tx); err != nil {
-				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+				w.logger.Error("error occured while processing tx", zap.Int64("sequence_id", sequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.Error(err))
 				return err
 			}
 			confirmedTxs[tx.ID] = tx
@@ -342,5 +342,5 @@ func (w *workerImpl) isTxOutdated(tx string) (bool, error) {
 		return false, err
 	}
 
-	return time.Now().Sub(t.Timestamp) >= w.txOutdateTime, nil
+	return time.Now().Sub(time.Unix(0, t.Timestamp*int64(time.Millisecond))) >= w.txOutdateTime, nil
 }
