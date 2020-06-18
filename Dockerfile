@@ -23,7 +23,7 @@ WORKDIR /app
 
 COPY --from=build /build/bin/* /app/
 
-COPY ./db/migrations/* ./db/migrations
+COPY ./db/migrations/* ./db/migrations/
 
 ENV GIN_MODE=release
 CMD ["/app/service"]
