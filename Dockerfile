@@ -15,7 +15,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/service cmd/$SERVICE/main.go
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/migrate cmd/migrate/*.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/migrate db/migrations/migrate.go
 
 # RUN
 FROM alpine

@@ -4,8 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path"
-	"runtime"
 
 	"github.com/go-pg/migrations/v7"
 	"github.com/go-pg/pg/v9"
@@ -35,11 +33,8 @@ func main() {
 		Password: os.Getenv("PGPASSWORD"),
 	})
 
-	_, b, _, _ := runtime.Caller(0)
-	migrationsPath := path.Join(path.Dir(b), "../..", "db/migrations")
-
-	fmt.Println("Discover SQL migrations from ", migrationsPath)
-	migrations.DefaultCollection.DiscoverSQLMigrations(migrationsPath)
+	fmt.Println("Discover SQL migrations from db/migrations")
+	migrations.DefaultCollection.DiscoverSQLMigrations(".")
 
 	oldVersion, newVersion, err := migrations.Run(db, flag.Args()...)
 	if err != nil {
