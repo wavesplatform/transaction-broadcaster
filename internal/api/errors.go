@@ -4,13 +4,16 @@ import (
 	"fmt"
 )
 
+const _internalServerErrorMessage = "Internal Server Error"
+
 const (
-	// validation errors
+	// common validation errors
 	_missingRequiredParameter = 950200
 	_invalidParameterValue    = 950201
 
-	// internal server errors
-	_internalServerError = 950500
+	// service errors
+	_txsDuplicatesError  = 950301
+	_invalidFirstTxError = 950302
 )
 
 type errorDetails map[string]interface{}
@@ -54,24 +57,25 @@ func MissingRequiredParameter(parameterName string) Error {
 }
 
 // InvalidParameterValue ...
-func InvalidParameterValue(parameterName string, reason string, meta errorDetails) Error {
+func InvalidParameterValue(parameterName string, reason string) Error {
 	details := errorDetails{
 		"parameter": parameterName,
 		"reason":    reason,
 	}
-	if meta != nil {
-		for key, value := range meta {
-			if key != "parameter" && key != "reason" {
-				details[key] = value
-			}
-		}
-	}
 	return NewError(_invalidParameterValue, details)
 }
 
-// InternalServerError ...
-func InternalServerError() Error {
-	return NewError(_internalServerError, nil)
+// TxsDuplicatesError ...
+func TxsDuplicatesError(meta errorDetails) Error {
+	return NewError(_txsDuplicatesError, meta)
+}
+
+// InvalidFirstTxError ...
+func InvalidFirstTxError(reason string) Error {
+	details := errorDetails{
+		"reason": reason,
+	}
+	return NewError(_invalidFirstTxError, details)
 }
 
 // SingleHTTPError returns HTTPErrors build from single HTTPError
@@ -98,10 +102,13 @@ func (err *apiErrorImpl) Message() string {
 	case _invalidParameterValue:
 		return "Invalid parameter value."
 
-	case _internalServerError:
-		fallthrough
+	case _txsDuplicatesError:
+		return "There are duplicates in the transactions array."
+	case _invalidFirstTxError:
+		return "The first transaction is invalid."
+
 	default:
-		return "Internal server error."
+		return _internalServerErrorMessage
 	}
 }
 

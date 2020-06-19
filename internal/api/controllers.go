@@ -25,14 +25,16 @@ func getSequence(logger *zap.Logger, renderError errorRenderer, repo repository.
 
 		id, err := strconv.ParseInt(rawID, 10, 64)
 		if err != nil {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("id", fmt.Sprintf("Error occured while parsing id: %s.", err.Error()), nil))
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("id", fmt.Sprintf("Error occured while parsing id: %s.", err.Error())))
 			return
 		}
 
 		sequence, err := repo.GetSequenceByID(id)
 		if err != nil {
 			logger.Error("cannot get sequence from db", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-			renderError(c, http.StatusInternalServerError, InternalServerError())
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": _internalServerErrorMessage,
+			})
 			return
 		}
 
@@ -54,18 +56,20 @@ func createSequence(logger *zap.Logger, renderError errorRenderer, repo reposito
 		_, err := buf.ReadFrom(c.Request.Body)
 		if err != nil {
 			logger.Error("cannot get request body", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-			renderError(c, http.StatusInternalServerError, InternalServerError())
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": _internalServerErrorMessage,
+			})
 			return
 		}
 
 		transactions, err := parseTransactions(buf.String())
 		if err != nil {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "Invalid request.", nil))
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "Invalid request."))
 			return
 		}
 
 		if len(transactions) == 0 {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are not any transactions in the request.", nil))
+			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are not any transactions in the request."))
 			return
 		}
 
@@ -77,7 +81,7 @@ func createSequence(logger *zap.Logger, renderError errorRenderer, repo reposito
 			txHashString := hex.EncodeToString(txHash[:])
 			if _, ok := txHashes[txHashString]; ok {
 				logger.Error("there are duplicates in the transactions array", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-				renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "There are duplicates in the transactions array.", errorDetails{
+				renderError(c, http.StatusBadRequest, TxsDuplicatesError(errorDetails{
 					"duplicates": []int{txHashes[txHashString], idx},
 				}))
 				return
@@ -90,20 +94,22 @@ func createSequence(logger *zap.Logger, renderError errorRenderer, repo reposito
 		validationResult, wavesErr := nodeInteractor.ValidateTx(transactions[0])
 		if wavesErr != nil {
 			logger.Error("cannot validate the first tx of sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(wavesErr))
-			renderError(c, http.StatusInternalServerError, InternalServerError())
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": _internalServerErrorMessage,
+			})
 			return
 		}
 		if !validationResult.IsValid {
-			renderError(c, http.StatusBadRequest, InvalidParameterValue("transactions", "The first transaction is invalid.", errorDetails{
-				"errorMessage": validationResult.ErrorMessage,
-			}))
+			renderError(c, http.StatusBadRequest, InvalidFirstTxError(validationResult.ErrorMessage))
 			return
 		}
 
 		sequenceID, err := repo.CreateSequence(txs)
 		if err != nil {
 			logger.Error("cannot create sequence", zap.String("req_id", c.Request.Header.Get("X-Request-Id")), zap.Error(err))
-			renderError(c, http.StatusInternalServerError, InternalServerError())
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": _internalServerErrorMessage,
+			})
 			return
 		}
 

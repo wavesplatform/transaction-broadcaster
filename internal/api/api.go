@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"time"
 
 	"github.com/wavesplatform/transaction-broadcaster/internal/log"
@@ -11,8 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-var errInternalServerError = errors.New("Internal Server Error")
 
 type errorRenderer func(*gin.Context, int, Error)
 
