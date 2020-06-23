@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS sequences (
 
 CREATE TABLE IF NOT EXISTS sequences_txs (
     sequence_id BIGINT NOT NULL REFERENCES sequences (id) ON DELETE CASCADE,
-    tx_id VARCHAR NOT NULL,
+    tx_id VARCHAR,
     state SMALLINT NOT NULL,
     height INT DEFAULT NULL,
     error_message VARCHAR DEFAULT NULL,
@@ -17,6 +17,6 @@ CREATE TABLE IF NOT EXISTS sequences_txs (
     tx VARCHAR NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT sequences_txs_pk PRIMARY KEY (sequence_id, tx_id)
+    CONSTRAINT sequences_txs_pk PRIMARY KEY (sequence_id, position_in_sequence)
 );
  

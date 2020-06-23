@@ -4,34 +4,38 @@ import (
 	"fmt"
 )
 
-const (
-	// validation errors
-	_missingRequiredParameter = 10200
-	_invalidParameterValue    = 10201
+const _internalServerErrorMessage = "Internal Server Error"
 
-	// internal server errors
-	_internalServerError = 10500
+const (
+	// common validation errors
+	_missingRequiredParameter = 950200
+	_invalidParameterValue    = 950201
+
+	// service errors
+	_txsDuplicatesError  = 950301
+	_invalidFirstTxError = 950302
 )
 
-// error ...
+type errorDetails map[string]interface{}
+
 type apiErrorImpl struct {
-	code    uint16
-	details map[string]string // at this moment there is only string at the value type
+	code    uint32
+	details errorDetails
 }
 
 // Error represents API error
 type Error interface {
 	Error() string
 	Message() string
-	Details() map[string]string
-	Code() uint16
+	Details() errorDetails
+	Code() uint32
 }
 
 // HTTPError represents single api http error
 type HTTPError struct {
-	Code    uint16            `json:"code"`
-	Message string            `json:"message"`
-	Details map[string]string `json:"details,omitempty"`
+	Code    uint32       `json:"code"`
+	Message string       `json:"message"`
+	Details errorDetails `json:"details,omitempty"`
 }
 
 // HTTPErrors represents array of http errors
@@ -40,13 +44,13 @@ type HTTPErrors struct {
 }
 
 // NewError returns instance of Error interface implementation
-func NewError(code uint16, details map[string]string) Error {
+func NewError(code uint32, details errorDetails) Error {
 	return &apiErrorImpl{code: code, details: details}
 }
 
 // MissingRequiredParameter ...
 func MissingRequiredParameter(parameterName string) Error {
-	details := map[string]string{
+	details := errorDetails{
 		"parameter": parameterName,
 	}
 	return NewError(_missingRequiredParameter, details)
@@ -54,16 +58,24 @@ func MissingRequiredParameter(parameterName string) Error {
 
 // InvalidParameterValue ...
 func InvalidParameterValue(parameterName string, reason string) Error {
-	details := map[string]string{
+	details := errorDetails{
 		"parameter": parameterName,
 		"reason":    reason,
 	}
 	return NewError(_invalidParameterValue, details)
 }
 
-// InternalServerError ...
-func InternalServerError() Error {
-	return NewError(_internalServerError, nil)
+// TxsDuplicatesError ...
+func TxsDuplicatesError(meta errorDetails) Error {
+	return NewError(_txsDuplicatesError, meta)
+}
+
+// InvalidFirstTxError ...
+func InvalidFirstTxError(reason string) Error {
+	details := errorDetails{
+		"reason": reason,
+	}
+	return NewError(_invalidFirstTxError, details)
 }
 
 // SingleHTTPError returns HTTPErrors build from single HTTPError
@@ -90,19 +102,22 @@ func (err *apiErrorImpl) Message() string {
 	case _invalidParameterValue:
 		return "Invalid parameter value."
 
-	case _internalServerError:
-		fallthrough
+	case _txsDuplicatesError:
+		return "There are duplicates in the transactions array."
+	case _invalidFirstTxError:
+		return "The first transaction is invalid."
+
 	default:
-		return "Internal server error."
+		return _internalServerErrorMessage
 	}
 }
 
 // Details ...
-func (err *apiErrorImpl) Details() map[string]string {
+func (err *apiErrorImpl) Details() errorDetails {
 	return err.details
 }
 
 // Code ...
-func (err *apiErrorImpl) Code() uint16 {
+func (err *apiErrorImpl) Code() uint32 {
 	return err.code
 }

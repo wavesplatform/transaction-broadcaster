@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/waves-exchange/broadcaster/internal/log"
+	"github.com/wavesplatform/transaction-broadcaster/internal/log"
 	"go.uber.org/zap"
 )
 
@@ -36,7 +36,7 @@ type transactionStatusResponse struct {
 	Confirmations int32
 }
 
-type transactionsStatusResponse []transactionStatusResponse
+type transactionStatusesResponse []transactionStatusResponse
 
 type blocksHeightResponse struct {
 	Height int32
@@ -223,6 +223,8 @@ func (r *impl) WaitForTxStatus(txID string, waitForStatus TransactionStatus) (in
 
 		if status.Status == waitForStatus {
 			return status.Height, nil
+		} else if status.Status == TransactionStatusNotFound {
+			return 0, NewError(TxNotFoundError, "tx not found")
 		}
 
 		now := time.Now()
@@ -236,19 +238,26 @@ func (r *impl) WaitForTxStatus(txID string, waitForStatus TransactionStatus) (in
 
 // WaitForNHeights waits for n heights in the blockchain
 func (r *impl) WaitForTargetHeight(targetHeight int32) Error {
-	ticker := time.NewTicker(r.waitForNextHeightDelay)
-	for range ticker.C {
-		newHeight, err := r.GetCurrentHeight()
-		if err != nil {
-			return NewError(InternalError, err.Error())
-		}
+	done := make(chan bool, 1)
 
-		if newHeight >= targetHeight {
-			ticker.Stop()
+	ticker := time.NewTicker(r.waitForNextHeightDelay)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return nil
+		case <-ticker.C:
+			newHeight, err := r.GetCurrentHeight()
+			if err != nil {
+				return NewError(InternalError, err.Error())
+			}
+
+			if newHeight > targetHeight {
+				done <- true
+			}
 		}
 	}
-
-	return nil
 }
 
 // WaitForNextHeight waits for the next height in the blockchain
@@ -287,7 +296,7 @@ func (r *impl) GetTxsAvailability(txIDs []string) (Availability, Error) {
 		return nil, NewError(InternalError, errorResponseDto.Message)
 	}
 
-	txStatuses := transactionsStatusResponse{}
+	txStatuses := transactionStatusesResponse{}
 	if err = json.NewDecoder(resp.Body).Decode(&txStatuses); err != nil {
 		return nil, NewError(InternalError, err.Error())
 	}
@@ -319,10 +328,10 @@ func (r *impl) getTxStatus(txID string) (*transactionStatusResponse, Error) {
 		return nil, NewError(GetTxStatusError, resp.Status)
 	}
 
-	txStatus := transactionsStatusResponse{}
-	if err = json.NewDecoder(resp.Body).Decode(&txStatus); err != nil {
+	txStatuses := transactionStatusesResponse{}
+	if err = json.NewDecoder(resp.Body).Decode(&txStatuses); err != nil {
 		return nil, NewError(InternalError, err.Error())
 	}
 
-	return &txStatus[0], nil
+	return &txStatuses[0], nil
 }

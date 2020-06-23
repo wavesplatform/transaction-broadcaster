@@ -7,12 +7,12 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/waves-exchange/broadcaster/internal/api"
-	"github.com/waves-exchange/broadcaster/internal/config"
-	"github.com/waves-exchange/broadcaster/internal/dispatcher"
-	"github.com/waves-exchange/broadcaster/internal/log"
-	"github.com/waves-exchange/broadcaster/internal/node"
-	"github.com/waves-exchange/broadcaster/internal/repository"
+	"github.com/wavesplatform/transaction-broadcaster/internal/api"
+	"github.com/wavesplatform/transaction-broadcaster/internal/config"
+	"github.com/wavesplatform/transaction-broadcaster/internal/dispatcher"
+	"github.com/wavesplatform/transaction-broadcaster/internal/log"
+	"github.com/wavesplatform/transaction-broadcaster/internal/node"
+	"github.com/wavesplatform/transaction-broadcaster/internal/repository"
 )
 
 func main() {
@@ -41,7 +41,7 @@ func main() {
 
 	nodeInteractor := node.New(cfg.Node.NodeURL, cfg.Node.NodeAPIKey, cfg.Node.WaitForTxStatusDelay, cfg.Node.WaitForTxTimeout, cfg.Node.WaitForNextHeightDelay)
 
-	disp := dispatcher.New(repo, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
+	disp := dispatcher.New(repo, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxOutdateTime, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
 
 	go func() {
 		if err := disp.RunLoop(); err != nil {

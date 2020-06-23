@@ -1,18 +1,25 @@
 package worker
 
 import (
-	"fmt"
+	"encoding/json"
+	"regexp"
 	"time"
 
-	"github.com/waves-exchange/broadcaster/internal/log"
-	"github.com/waves-exchange/broadcaster/internal/node"
-	"github.com/waves-exchange/broadcaster/internal/repository"
+	"github.com/wavesplatform/transaction-broadcaster/internal/log"
+	"github.com/wavesplatform/transaction-broadcaster/internal/node"
+	"github.com/wavesplatform/transaction-broadcaster/internal/repository"
 	"go.uber.org/zap"
 )
 
+var transactionTimestampErrorRE = regexp.MustCompile("Transaction timestamp \\d+ is more than \\d+ms")
+
+type txWithTimestamp struct {
+	Timestamp int64 `json:"timestamp"`
+}
+
 // Worker represents worker interface
 type Worker interface {
-	Run(sequenceID int64) error
+	Run(sequenceID int64) ErrorWithReason
 }
 
 type workerImpl struct {
@@ -22,11 +29,12 @@ type workerImpl struct {
 	txProcessingTTL        time.Duration
 	heightsAfterLastTx     int32
 	waitForNextHeightDelay time.Duration
+	txOutdateTime          time.Duration
 }
 
 // New returns instance of Worker interface implementation
-func New(repo repository.Repository, nodeInteractor node.Interactor, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Worker {
-	logger := log.Logger.Named("worker")
+func New(workerID string, repo repository.Repository, nodeInteractor node.Interactor, txOutdateTime, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Worker {
+	logger := log.Logger.Named("worker-" + workerID)
 
 	return &workerImpl{
 		logger:                 logger,
@@ -35,16 +43,17 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, txProcessin
 		txProcessingTTL:        time.Duration(txProcessingTTL) * time.Millisecond,
 		heightsAfterLastTx:     heightsAfterLastTx,
 		waitForNextHeightDelay: time.Duration(waitForNextHeightDelay) * time.Millisecond,
+		txOutdateTime:          time.Duration(txOutdateTime) * time.Millisecond,
 	}
 }
 
 // Run starts the worker processing sequenceID
-func (w *workerImpl) Run(sequenceID int64) error {
+func (w *workerImpl) Run(sequenceID int64) ErrorWithReason {
 	w.logger.Debug("start processing sequence", zap.Int64("sequence_id", sequenceID))
 
 	txs, err := w.repo.GetSequenceTxsByID(sequenceID)
 	if err != nil {
-		w.logger.Error("error occurred while getting sequence txs", zap.Error(err))
+		w.logger.Error("error occurred while getting sequence txs", zap.Error(err), zap.Int64("sequence_id", sequenceID))
 		return NewFatalError(err.Error())
 	}
 
@@ -64,42 +73,22 @@ func (w *workerImpl) Run(sequenceID int64) error {
 				confirmedTxIDs = append(confirmedTxIDs, txID)
 			}
 
-			availability, wavesErr := w.nodeInteractor.GetTxsAvailability(confirmedTxIDs)
-			if wavesErr != nil {
-				w.logger.Error("error occurred while fetching txs statuses", zap.Error(wavesErr), zap.Int64("sequence_id", sequenceID))
-				return NewRecoverableError(wavesErr.Error())
-			}
-
-			for txID, isAvailable := range availability {
-				if !isAvailable {
-					w.logger.Debug("one of confirmed tx was pulled out", zap.Int64("sequence_id", sequenceID), zap.String("tx_id", txID))
-
-					if err := w.repo.SetSequenceTxsStateAfter(sequenceID, txID, repository.TransactionStatePending); err != nil {
-						w.logger.Error("error occured while setting txs pending state", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("after_tx_id", txID))
-						return NewFatalError(err.Error())
-					}
-
-					return NewRecoverableError(err.Error())
-				}
+			if err := w.checkTxsAvailability(sequenceID, confirmedTxIDs); err != nil {
+				return err
 			}
 		}
 
 		switch tx.State {
-		case repository.TransactionStatePending:
-			if err := w.processTx(tx, true); err != nil {
-				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
-				return err
-			}
-			confirmedTxs[tx.ID] = tx
 		case repository.TransactionStateProcessing:
 			if time.Now().Sub(tx.UpdatedAt) < w.txProcessingTTL {
-				w.logger.Debug("tx is under processing, processing delay is not over", zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
+				w.logger.Debug("tx is under processing, processing delay is not over", zap.Int64("sequence_id", sequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
 				return nil
 			}
-
-		case repository.TransactionStateUnconfirmed:
-			if err := w.processTx(tx, true); err != nil {
-				w.logger.Error("error occured while processing tx", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("tx_id", tx.ID))
+			fallthrough
+		case repository.TransactionStatePending, repository.TransactionStateValidated, repository.TransactionStateUnconfirmed:
+			// will mutate tx - sets ID and height
+			if err := w.processTx(tx); err != nil {
+				w.logger.Error("error occured while processing tx", zap.Int64("sequence_id", sequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.Error(err))
 				return err
 			}
 			confirmedTxs[tx.ID] = tx
@@ -119,96 +108,174 @@ func (w *workerImpl) Run(sequenceID int64) error {
 
 	targetHeight := startHeight + w.heightsAfterLastTx
 
-	if err = w.waitForTargetHeight(targetHeight, sequenceID, confirmedTxIDs); err != nil {
+	if err := w.waitForTargetHeight(targetHeight, sequenceID, confirmedTxIDs); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (w *workerImpl) processTx(tx *repository.SequenceTx, isFirstTry bool) error {
+// notes: mutate tx - sets State, ID and height
+func (w *workerImpl) processTx(tx *repository.SequenceTx) ErrorWithReason {
 	switch tx.State {
 	case repository.TransactionStatePending:
-		w.logger.Debug("process tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
+		w.logger.Debug("process tx", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
 
-		if err := w.repo.SetSequenceTxState(tx, repository.TransactionStateProcessing); err != nil {
+		if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStateProcessing); err != nil {
 			return NewFatalError(err.Error())
 		}
+		tx.State = repository.TransactionStateProcessing
+
 		fallthrough
 	case repository.TransactionStateProcessing:
-		w.logger.Debug("validate tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
+		w.logger.Debug("validate tx", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
 
-		validationResult, wavesErr := w.nodeInteractor.ValidateTx(tx.Tx)
-		if wavesErr != nil {
-			w.logger.Error("error occurred while validating tx", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
-			return NewRecoverableError(wavesErr.Error())
+		if err := w.validateTx(tx); err != nil {
+			return err
 		}
 
-		if !validationResult.IsValid {
-			w.logger.Debug("invalid tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
-
-			// try to revalidate tx on the next blockchain height
-			if isFirstTry {
-				w.nodeInteractor.WaitForNextHeight()
-				return w.processTx(tx, false)
-			}
-
-			if err := w.repo.SetSequenceTxErrorState(tx, validationResult.ErrorMessage); err != nil {
-				w.logger.Error("error occured while setting tx error state", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
-				return NewFatalError(err.Error())
-			}
-
-			return NewNonRecoverableError(fmt.Sprintf("tx %s is invalid", tx.ID))
-		}
-
-		if err := w.repo.SetSequenceTxState(tx, repository.TransactionStateValidated); err != nil {
+		if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStateValidated); err != nil {
 			return NewFatalError(err.Error())
 		}
+		tx.State = repository.TransactionStateValidated
 
 		fallthrough
 	case repository.TransactionStateValidated:
-		w.logger.Debug("broadcast tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
+		w.logger.Debug("broadcast tx", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
 
-		_, wavesErr := w.nodeInteractor.BroadcastTx(tx.Tx)
-		if wavesErr != nil {
-			if wavesErr.Code() == node.BroadcastClientError {
-				w.logger.Error("error occurred while setting sequence error state", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
-				return NewNonRecoverableError(wavesErr.Error())
-			}
-
-			w.logger.Error("error occurred while broadcasting tx", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
-			return NewRecoverableError(wavesErr.Error())
+		// will mutate tx - sets ID
+		if err := w.broadcastTx(tx); err != nil {
+			return err
 		}
 
-		if err := w.repo.SetSequenceTxState(tx, repository.TransactionStateUnconfirmed); err != nil {
+		if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStateUnconfirmed); err != nil {
 			return NewFatalError(err.Error())
 		}
+		tx.State = repository.TransactionStateUnconfirmed
 
 		fallthrough
 	case repository.TransactionStateUnconfirmed:
-		w.logger.Debug("wait for tx", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
+		w.logger.Debug("wait for tx confirmation", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("tx_id", tx.ID))
 
-		height, wavesErr := w.nodeInteractor.WaitForTxStatus(tx.ID, node.TransactionStatusConfirmed)
-		if wavesErr != nil {
-			return NewRecoverableError(wavesErr.Error())
+		height, err := w.waitForTxConfirmation(tx.ID)
+		if err != nil {
+			if err.Code() == node.TxNotFoundError {
+				if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStatePending); err != nil {
+					return NewFatalError(err.Error())
+				}
+			}
+			return NewRecoverableError(err.Error())
 		}
 
-		if err := w.repo.SetSequenceTxConfirmedState(tx, height); err != nil {
+		if err := w.repo.SetSequenceTxConfirmedState(tx.SequenceID, tx.PositionInSequence, height); err != nil {
 			return NewFatalError(err.Error())
 		}
+		tx.State = repository.TransactionStateConfirmed
+		tx.Height = height
 
 		fallthrough
 	case repository.TransactionStateConfirmed:
-		w.logger.Debug("tx appeared in the blockchain", zap.Int64("sequence_id", tx.SequenceID), zap.String("tx_id", tx.ID))
+		w.logger.Debug("tx appeared in the blockchain", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("tx_id", tx.ID))
 		return nil
 	default:
 		return nil
 	}
 }
 
+func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
+	validationResult, wavesErr := w.nodeInteractor.ValidateTx(tx.Tx)
+	if wavesErr != nil {
+		w.logger.Error("error occurred while validating tx", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+		return NewRecoverableError(wavesErr.Error())
+	}
+
+	if !validationResult.IsValid {
+		w.logger.Debug("invalid tx", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+
+		// check where error is about transaction timestamp
+		isTimestampError := transactionTimestampErrorRE.MatchString(validationResult.ErrorMessage)
+
+		isOutdated, err := w.isTxOutdated(tx.Tx)
+		if err != nil {
+			return NewNonRecoverableError(err.Error())
+		}
+
+		if isOutdated {
+			w.logger.Debug("tx is outdated (local check)", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+		}
+
+		if !isTimestampError && !isOutdated {
+			if err := w.repo.SetSequenceTxErrorMessage(tx.SequenceID, tx.PositionInSequence, validationResult.ErrorMessage); err != nil {
+				w.logger.Error("error occured while setting tx error message", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("error_message", validationResult.ErrorMessage))
+				return NewFatalError(err.Error())
+			}
+			tx.ErrorMessage = validationResult.ErrorMessage
+
+			if err := w.nodeInteractor.WaitForNextHeight(); err != nil {
+				return NewRecoverableError(err.Error())
+			}
+
+			return w.validateTx(tx)
+		}
+
+		if err := w.repo.SetSequenceTxState(tx.SequenceID, tx.PositionInSequence, repository.TransactionStateError); err != nil {
+			w.logger.Error("error occured while setting tx error state", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+			return NewFatalError(err.Error())
+		}
+
+		errorMessage := validationResult.ErrorMessage
+		if len(tx.ErrorMessage) > 0 {
+			errorMessage = tx.ErrorMessage
+		}
+
+		return NewNonRecoverableError(errorMessage)
+	}
+
+	// tx is valid, reset error message that may have been set
+	if err := w.repo.ResetSequenceTxErrorMessage(tx.SequenceID, tx.PositionInSequence); err != nil {
+		w.logger.Error("error occured while resetting tx error message", zap.Error(err), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+		return NewFatalError(err.Error())
+	}
+	tx.ErrorMessage = ""
+
+	return nil
+}
+
+// broadcastTx broadcasts transaction to the blockhain
+// whether transaction successfully broadcasted, its sets tx.ID to retrieved txID
+// mutate tx
+func (w *workerImpl) broadcastTx(tx *repository.SequenceTx) ErrorWithReason {
+	txID, wavesErr := w.nodeInteractor.BroadcastTx(tx.Tx)
+
+	if wavesErr != nil {
+		if wavesErr.Code() == node.BroadcastClientError {
+			w.logger.Error("error occurred while setting sequence error state", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+			return NewNonRecoverableError(wavesErr.Error())
+		}
+
+		w.logger.Error("error occurred while broadcasting tx", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+		return NewRecoverableError(wavesErr.Error())
+	}
+
+	if err := w.repo.SetSequenceTxID(tx.SequenceID, tx.PositionInSequence, txID); err != nil {
+		return NewFatalError(err.Error())
+	}
+	tx.ID = txID
+
+	return nil
+}
+
+func (w *workerImpl) waitForTxConfirmation(txID string) (int32, node.Error) {
+	height, wavesErr := w.nodeInteractor.WaitForTxStatus(txID, node.TransactionStatusConfirmed)
+	if wavesErr != nil {
+		return 0, wavesErr
+	}
+	return height, nil
+}
+
 // waitForTargetHeight waits for target height
 // and on each height checking its checks that none of confirmed txs was not pulled out from the blockchain
-func (w *workerImpl) waitForTargetHeight(targetHeight int32, seqID int64, confirmedTxIDs []string) error {
+func (w *workerImpl) waitForTargetHeight(targetHeight int32, seqID int64, confirmedTxIDs []string) ErrorWithReason {
 	currentHeight, wavesErr := w.nodeInteractor.GetCurrentHeight()
 	if wavesErr != nil {
 		w.logger.Error("error occurred while getting current height", zap.Error(wavesErr))
@@ -231,23 +298,8 @@ func (w *workerImpl) waitForTargetHeight(targetHeight int32, seqID int64, confir
 			return NewFatalError(err.Error())
 		}
 
-		availability, wavesErr := w.nodeInteractor.GetTxsAvailability(confirmedTxIDs)
-		if wavesErr != nil {
-			w.logger.Error("error occurred while waiting for n blocks after last tx", zap.Error(wavesErr))
-			return NewRecoverableError(wavesErr.Error())
-		}
-
-		for txID, isAvailable := range availability {
-			if !isAvailable {
-				w.logger.Debug("one of confirmed tx was pulled out", zap.String("tx_id", txID))
-
-				if err := w.repo.SetSequenceTxsStateAfter(seqID, txID, repository.TransactionStatePending); err != nil {
-					w.logger.Error("error occured while setting txs pending state", zap.Error(err), zap.Int64("sequence_id", seqID), zap.String("after_tx_id", txID))
-					return NewFatalError(err.Error())
-				}
-
-				return NewRecoverableError("error occured while waiting for the Ns block after last tx: one of tx was pulled out from the blockchain")
-			}
+		if err := w.checkTxsAvailability(seqID, confirmedTxIDs); err != nil {
+			return err
 		}
 
 		currentHeight, wavesErr := w.nodeInteractor.GetCurrentHeight()
@@ -263,4 +315,40 @@ func (w *workerImpl) waitForTargetHeight(targetHeight int32, seqID int64, confir
 	}
 
 	return nil
+}
+
+func (w *workerImpl) checkTxsAvailability(sequenceID int64, confirmedTxIDs []string) ErrorWithReason {
+	availability, wavesErr := w.nodeInteractor.GetTxsAvailability(confirmedTxIDs)
+	if wavesErr != nil {
+		w.logger.Error("error occurred while fetching txs statuses", zap.Error(wavesErr), zap.Int64("sequence_id", sequenceID))
+		return NewRecoverableError(wavesErr.Error())
+	}
+
+	for txID, isAvailable := range availability {
+		if !isAvailable {
+			w.logger.Debug("one of confirmed tx was pulled out", zap.Int64("sequence_id", sequenceID), zap.String("tx_id", txID))
+
+			if err := w.repo.SetSequenceTxsStateAfter(sequenceID, txID, repository.TransactionStatePending); err != nil {
+				w.logger.Error("error occured while setting txs pending state", zap.Error(err), zap.Int64("sequence_id", sequenceID), zap.String("after_tx_id", txID))
+				return NewFatalError(err.Error())
+			}
+
+			return NewRecoverableError("error occured while waiting for the Ns block after last tx: one of tx was pulled out from the blockchain")
+		}
+	}
+
+	return nil
+}
+
+// isTxOutdated retrieves timestamp from tx (via parsing json)
+// and checks whether tx is outdated
+func (w *workerImpl) isTxOutdated(tx string) (bool, error) {
+	t := txWithTimestamp{}
+
+	err := json.Unmarshal([]byte(tx), &t)
+	if err != nil {
+		return false, err
+	}
+
+	return time.Now().Sub(time.Unix(0, t.Timestamp*int64(time.Millisecond))) >= w.txOutdateTime, nil
 }
