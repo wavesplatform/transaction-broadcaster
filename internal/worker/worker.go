@@ -12,6 +12,7 @@ import (
 )
 
 var transactionTimestampErrorRE = regexp.MustCompile("Transaction timestamp \\d+ is more than \\d+ms")
+var transactionDuplicateErrorRE = regexp.MustCompile("State check failed. Reason: Transaction (\\w+) is already in the state on a height of \\d+")
 
 type txWithTimestamp struct {
 	Timestamp int64 `json:"timestamp"`
@@ -248,13 +249,20 @@ func (w *workerImpl) broadcastTx(tx *repository.SequenceTx) ErrorWithReason {
 	txID, wavesErr := w.nodeInteractor.BroadcastTx(tx.Tx)
 
 	if wavesErr != nil {
-		if wavesErr.Code() == node.BroadcastClientError {
-			w.logger.Error("error occurred while setting sequence error state", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
-			return NewNonRecoverableError(wavesErr.Error())
-		}
+		// check where error is about transaction duplicate
+		matches := transactionDuplicateErrorRE.FindStringSubmatch(wavesErr.Error())
+		if len(matches) > 1 {
+			// transaction is already in the blockchain
+			txID = matches[1]
+		} else {
+			w.logger.Error("error occurred while broadcasting tx", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
 
-		w.logger.Error("error occurred while broadcasting tx", zap.Error(wavesErr), zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
-		return NewRecoverableError(wavesErr.Error())
+			if wavesErr.Code() == node.BroadcastClientError {
+				return NewNonRecoverableError(wavesErr.Error())
+			}
+
+			return NewRecoverableError(wavesErr.Error())
+		}
 	}
 
 	if err := w.repo.SetSequenceTxID(tx.SequenceID, tx.PositionInSequence, txID); err != nil {
