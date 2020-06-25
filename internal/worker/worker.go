@@ -82,8 +82,8 @@ func (w *workerImpl) Run(sequenceID int64) ErrorWithReason {
 		switch tx.State {
 		case repository.TransactionStateProcessing:
 			if time.Now().Sub(tx.UpdatedAt) < w.txProcessingTTL {
-				w.logger.Debug("tx is under processing, processing delay is not over", zap.Int64("sequence_id", sequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
-				return nil
+				w.logger.Debug("tx is under processing, processing ttl is not over", zap.Int64("sequence_id", sequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
+				return NewRecoverableError("error occured while processing tx: tx is under processing, processing TTL is not over")
 			}
 			fallthrough
 		case repository.TransactionStatePending, repository.TransactionStateValidated, repository.TransactionStateUnconfirmed:
