@@ -176,7 +176,8 @@ func (d *dispatcherImpl) runWorker(seqID int64) {
 
 		d.mutex.Lock()
 		delete(d.sequencesUnderProcessing, seqID)
-		d.mutex.Unlock()
+		// unlock only after sending message to completed/error channels
+		defer d.mutex.Unlock()
 
 		if err != nil {
 			d.errorsChan <- workerError{
