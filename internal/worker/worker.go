@@ -194,7 +194,7 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 		w.logger.Debug("invalid tx", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
 
 		// check whether error is about transaction duplicate
-		matches := transactionDuplicateErrorRE.FindStringSubmatch(wavesErr.Error())
+		matches := transactionDuplicateErrorRE.FindStringSubmatch(validationResult.ErrorMessage)
 		if len(matches) > 1 {
 			// transaction is already in the blockchain
 			return nil
