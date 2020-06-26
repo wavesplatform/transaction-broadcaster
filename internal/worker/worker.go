@@ -212,13 +212,17 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 			w.logger.Debug("tx is outdated (local check)", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence))
 		}
 
-		if !isTimestampError && !isOutdated {
+		// write error message only if it was not set already
+		// otherwise root error will be overwritten by timestamp error
+		if len(tx.ErrorMessage) == 0 {
 			if err := w.repo.SetSequenceTxErrorMessage(tx.SequenceID, tx.PositionInSequence, validationResult.ErrorMessage); err != nil {
 				w.logger.Error("error occured while setting tx error message", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.String("error_message", validationResult.ErrorMessage), zap.Error(err))
 				return NewFatalError(err.Error())
 			}
 			tx.ErrorMessage = validationResult.ErrorMessage
+		}
 
+		if !isTimestampError && !isOutdated {
 			if err := w.nodeInteractor.WaitForNextHeight(); err != nil {
 				return NewRecoverableError(err.Error())
 			}
