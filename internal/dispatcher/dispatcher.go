@@ -50,6 +50,7 @@ type dispatcherImpl struct {
 // New returns instance of Dispatcher interface implementation
 func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txOutdatedTime, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
 	logger := log.Logger.Named("dispatcher")
+
 	completedSequenceChan := make(chan int64)
 	errorsChan := make(chan workerError)
 
@@ -93,6 +94,8 @@ func (d *dispatcherImpl) RunLoop() error {
 		case e := <-d.errorsChan:
 			d.logger.Debug("got new error", zap.Error(e.Err), zap.Int64("sequence_id", e.SequenceID))
 
+			d.finishWorker(e.SequenceID)
+
 			switch e.Err.(type) {
 			case worker.RecoverableError:
 				d.logger.Debug("recoverable error", zap.String("message", e.Err.Error()))
@@ -118,6 +121,8 @@ func (d *dispatcherImpl) RunLoop() error {
 			}
 		case seqID := <-d.completedSequenceChan:
 			d.logger.Debug("got new completed sequence", zap.Int64("sequence_id", seqID))
+
+			d.finishWorker(seqID)
 
 			if err := d.repo.SetSequenceStateByID(seqID, repository.StateDone); err != nil {
 				d.logger.Error("error occured while setting sequence done state", zap.Error(err))
@@ -165,19 +170,12 @@ func (d *dispatcherImpl) runWorker(seqID int64) {
 
 	w := worker.New(strconv.FormatInt(newWorkersCount, 10), d.repo, d.nodeInteractor, d.worker.txOutdatedTime, d.worker.txProcessingTTL, d.worker.heightsAfterLastTx, d.worker.waitForNextHeightDelay)
 
-	go func(seqID int64) {
+	go func() {
 		d.mutex.Lock()
 		d.sequencesUnderProcessing[seqID] = true
 		d.mutex.Unlock()
 
 		err := w.Run(seqID)
-
-		atomic.AddInt64(&d.workersCounter, -1)
-
-		d.mutex.Lock()
-		delete(d.sequencesUnderProcessing, seqID)
-		// unlock only after sending message to completed/error channels
-		defer d.mutex.Unlock()
 
 		if err != nil {
 			d.errorsChan <- workerError{
@@ -188,5 +186,13 @@ func (d *dispatcherImpl) runWorker(seqID int64) {
 		}
 
 		d.completedSequenceChan <- seqID
-	}(seqID)
+	}()
+}
+
+func (d *dispatcherImpl) finishWorker(seqID int64) {
+	d.mutex.Lock()
+	delete(d.sequencesUnderProcessing, seqID)
+	d.mutex.Unlock()
+
+	atomic.AddInt64(&d.workersCounter, -1)
 }
