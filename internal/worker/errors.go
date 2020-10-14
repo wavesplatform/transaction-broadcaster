@@ -5,13 +5,17 @@ import "fmt"
 // RecoverableError represents recoverable error
 type RecoverableError struct {
 	reason string
-	code   uint16
 }
 
 // ErrorWithReason ...
 type ErrorWithReason interface {
 	error
 	Reason() string
+}
+
+// ErrorWithReasonAndCode ...
+type ErrorWithReasonAndCode interface {
+	ErrorWithReason
 	ErrorCode() uint16
 }
 
@@ -31,11 +35,6 @@ func (e RecoverableError) Reason() string {
 	return e.reason
 }
 
-// Reason returns error reason
-func (e RecoverableError) ErrorCode() uint16 {
-	return e.code
-}
-
 // NonRecoverableError represents non recoverable error
 type NonRecoverableError struct {
 	reason string
@@ -43,7 +42,7 @@ type NonRecoverableError struct {
 }
 
 // NewNonRecoverableError returns new NonRecoverableError based on err
-func NewNonRecoverableError(reason string, code uint16) ErrorWithReason {
+func NewNonRecoverableError(reason string, code uint16) ErrorWithReasonAndCode {
 	return NonRecoverableError{
 		reason: reason,
 		code:   code,
@@ -67,7 +66,6 @@ func (e NonRecoverableError) ErrorCode() uint16 {
 // FatalError represents fatal error (aka exception)
 type FatalError struct {
 	reason string
-	code   uint16
 }
 
 // NewFatalError returns new FatalError based on err
@@ -84,9 +82,4 @@ func (e FatalError) Error() string {
 // Reason returns error reason
 func (e FatalError) Reason() string {
 	return e.reason
-}
-
-// Reason returns error reason
-func (e FatalError) ErrorCode() uint16 {
-	return e.code
 }
