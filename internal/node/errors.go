@@ -31,8 +31,8 @@ func NewError(code uint16, message string) Error {
 	}
 }
 
-// AddNodeError adds node error code to NewError
-func AddNodeError(err Error, nodeErrorCode uint16) Error {
+// WithNodeError adds node error code to NewError
+func WithNodeError(err Error, nodeErrorCode uint16) Error {
 	return wavesErrorImpl{
 		code:          err.Code(),
 		message:       err.Error(),

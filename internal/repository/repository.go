@@ -28,7 +28,7 @@ type Sequence struct {
 	BroadcastedCount uint32 `json:"broadcasted_count"`
 	TotalCount       uint32 `json:"total_count"`
 	State            State  `json:"state"`
-	ErrorInfo        `json:"error,omitempty"`
+	ErrorInfo        `json:"error"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -37,15 +37,32 @@ type Sequence struct {
 // Its serializes time as unix timestamp
 func (s *Sequence) MarshalJSON() ([]byte, error) {
 	type JSONSequence Sequence
-	return json.Marshal(&struct {
-		*JSONSequence
-		CreatedAt int64 `json:"created_at"`
-		UpdatedAt int64 `json:"updated_at"`
-	}{
-		JSONSequence: (*JSONSequence)(s),
-		CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.Nanosecond()/1000000),
-		UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.Nanosecond()/1000000),
-	})
+	switch {
+	case s.ErrorInfo == (ErrorInfo{}):
+		return json.Marshal(&struct {
+			*JSONSequence
+			ErrorInfo string `json:"error"`
+			CreatedAt int64  `json:"created_at"`
+			UpdatedAt int64  `json:"updated_at"`
+		}{
+			JSONSequence: (*JSONSequence)(s),
+			CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.Nanosecond()/1000000),
+			UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.Nanosecond()/1000000),
+			ErrorInfo:    "null",
+		})
+	default:
+		return json.Marshal(&struct {
+			*JSONSequence
+			ErrorInfo `json:"error"`
+			CreatedAt int64 `json:"created_at"`
+			UpdatedAt int64 `json:"updated_at"`
+		}{
+			JSONSequence: (*JSONSequence)(s),
+			CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.Nanosecond()/1000000),
+			UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.Nanosecond()/1000000),
+			ErrorInfo:    s.ErrorInfo,
+		})
+	}
 }
 
 // SequenceTx represents sequence transaction type

@@ -198,7 +198,7 @@ func (r *impl) BroadcastTx(tx string) (string, Error) {
 			if err = json.NewDecoder(resp.Body).Decode(&errorResponseDto); err != nil {
 				return "", NewError(InternalError, err.Error())
 			}
-			return "", AddNodeError(NewError(BroadcastClientError, errorResponseDto.Message), errorResponseDto.Error)
+			return "", WithNodeError(NewError(BroadcastClientError, errorResponseDto.Message), errorResponseDto.Error)
 		}
 
 		return "", NewError(BroadcastServerError, resp.Status)
