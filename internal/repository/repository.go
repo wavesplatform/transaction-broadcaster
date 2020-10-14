@@ -17,13 +17,18 @@ type PgConfig struct {
 	Password string `env:"PGPASSWORD,required"`
 }
 
+type ErrorInfo struct {
+	ErrorMessage string `json:"message,omitempty"`
+	ErrorCode    int16  `json:"code,omitempty"`
+}
+
 // Sequence represents sequence type with json marshaling description
 type Sequence struct {
-	ID               int64     `json:"id"`
-	BroadcastedCount uint32    `json:"broadcasted_count"`
-	TotalCount       uint32    `json:"total_count"`
-	State            State     `json:"state"`
-	ErrorMessage     string    `json:"error_message,omitempty"`
+	ID               int64  `json:"id"`
+	BroadcastedCount uint32 `json:"broadcasted_count"`
+	TotalCount       uint32 `json:"total_count"`
+	State            State  `json:"state"`
+	ErrorInfo        `json:"error,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -151,7 +156,7 @@ type Repository interface {
 	GetHangingSequenceIds(ttl time.Duration, excluding []int64) ([]int64, error)
 	CreateSequence(txs []string) (int64, error)
 	SetSequenceStateByID(sequenceID int64, newState State) error
-	SetSequenceErrorStateByID(sequenceID int64, errorMessage string) error
+	SetSequenceErrorStateByID(sequenceID int64, errorMessage string, errorCode uint16) error
 	SetSequenceTxID(sequenceID int64, positionInSequence int16, txID string) error
 	SetSequenceTxState(sequenceID int64, positionInSequence int16, newState TransactionState) error
 	SetSequenceTxConfirmedState(sequenceID int64, positionInSequence int16, height int32) error
@@ -172,7 +177,7 @@ func New(db *pg.DB) Repository {
 func (r *repoImpl) GetSequenceByID(sequenceID int64) (*Sequence, error) {
 	seq := Sequence{}
 
-	_, err := r.Conn.QueryOne(&seq, "select id, state, error_message, created_at, updated_at, coalesce((select count(*) from sequences_txs where sequence_id=?0 and state=?1), 0) as broadcasted_count, (select count(*) from sequences_txs where sequence_id=?0) as total_count from sequences where id=?0", sequenceID, TransactionStateConfirmed)
+	_, err := r.Conn.QueryOne(&seq, "select id, state, error_message, error_code, created_at, updated_at, coalesce((select count(*) from sequences_txs where sequence_id=?0 and state=?1), 0) as broadcasted_count, (select count(*) from sequences_txs where sequence_id=?0) as total_count from sequences where id=?0", sequenceID, TransactionStateConfirmed)
 	if err != nil {
 		if err.Error() == pg.ErrNoRows.Error() {
 			return nil, nil
@@ -255,8 +260,8 @@ func (r *repoImpl) SetSequenceStateByID(sequenceID int64, newState State) error 
 	return err
 }
 
-func (r *repoImpl) SetSequenceErrorStateByID(sequenceID int64, errorMessage string) error {
-	_, err := r.Conn.Exec("update sequences set state=?0, error_message=?1, updated_at=NOW() where id=?2", StateError, errorMessage, sequenceID)
+func (r *repoImpl) SetSequenceErrorStateByID(sequenceID int64, errorMessage string, errorCode uint16) error {
+	_, err := r.Conn.Exec("update sequences set state=?0, error_message=?1, error_code=?2, updated_at=NOW() where id=?3", StateError, errorMessage, errorCode, sequenceID)
 	return err
 }
 

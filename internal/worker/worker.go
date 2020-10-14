@@ -94,7 +94,7 @@ func (w *workerImpl) Run(sequenceID int64) ErrorWithReason {
 			}
 			confirmedTxs[tx.ID] = tx
 		case repository.TransactionStateError:
-			return NewNonRecoverableError(tx.ErrorMessage)
+			return NewNonRecoverableError(tx.ErrorMessage, 0)
 		}
 	}
 
@@ -205,7 +205,7 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 
 		isOutdated, err := w.isTxOutdated(tx.Tx)
 		if err != nil {
-			return NewNonRecoverableError(err.Error())
+			return NewNonRecoverableError(err.Error(), 0)
 		}
 
 		if isOutdated {
@@ -240,7 +240,7 @@ func (w *workerImpl) validateTx(tx *repository.SequenceTx) ErrorWithReason {
 			errorMessage = tx.ErrorMessage
 		}
 
-		return NewNonRecoverableError(errorMessage)
+		return NewNonRecoverableError(errorMessage, 0)
 	}
 
 	// tx is valid, reset error message that may have been set
@@ -269,7 +269,7 @@ func (w *workerImpl) broadcastTx(tx *repository.SequenceTx) ErrorWithReason {
 			w.logger.Error("error occurred while broadcasting tx", zap.Int64("sequence_id", tx.SequenceID), zap.Int16("position_in_sequence", tx.PositionInSequence), zap.Error(wavesErr))
 
 			if wavesErr.Code() == node.BroadcastClientError {
-				return NewNonRecoverableError(wavesErr.Error())
+				return NewNonRecoverableError(wavesErr.Error(), wavesErr.NodeErrorCode())
 			}
 
 			return NewRecoverableError(wavesErr.Error())
