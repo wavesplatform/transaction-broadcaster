@@ -37,32 +37,25 @@ type Sequence struct {
 // Its serializes time as unix timestamp
 func (s *Sequence) MarshalJSON() ([]byte, error) {
 	type JSONSequence Sequence
-	switch {
-	case s.ErrorInfo == (ErrorInfo{}):
-		return json.Marshal(&struct {
-			*JSONSequence
-			ErrorInfo string `json:"error"`
-			CreatedAt int64  `json:"created_at"`
-			UpdatedAt int64  `json:"updated_at"`
-		}{
-			JSONSequence: (*JSONSequence)(s),
-			CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.Nanosecond()/1000000),
-			UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.Nanosecond()/1000000),
-			ErrorInfo:    "null",
-		})
-	default:
-		return json.Marshal(&struct {
-			*JSONSequence
-			ErrorInfo `json:"error"`
-			CreatedAt int64 `json:"created_at"`
-			UpdatedAt int64 `json:"updated_at"`
-		}{
-			JSONSequence: (*JSONSequence)(s),
-			CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.Nanosecond()/1000000),
-			UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.Nanosecond()/1000000),
-			ErrorInfo:    s.ErrorInfo,
-		})
+	var info *ErrorInfo
+
+	if s.ErrorInfo == (ErrorInfo{}) {
+		info = nil
+	} else {
+		info = &s.ErrorInfo
 	}
+
+	return json.Marshal(&struct {
+		*JSONSequence
+		ErrorInfo *ErrorInfo `json:"error"`
+		CreatedAt int64      `json:"created_at"`
+		UpdatedAt int64      `json:"updated_at"`
+	}{
+		JSONSequence: (*JSONSequence)(s),
+		CreatedAt:    s.CreatedAt.Unix()*1000 + int64(s.CreatedAt.Nanosecond()/1000000),
+		UpdatedAt:    s.UpdatedAt.Unix()*1000 + int64(s.UpdatedAt.Nanosecond()/1000000),
+		ErrorInfo:    info,
+	})
 }
 
 // SequenceTx represents sequence transaction type
