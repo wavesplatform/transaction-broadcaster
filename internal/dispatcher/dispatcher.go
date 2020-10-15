@@ -109,7 +109,7 @@ func (d *dispatcherImpl) RunLoop() error {
 			case worker.NonRecoverableError:
 				d.logger.Debug("non-recoverable error", zap.String("message", e.Err.Error()))
 
-				if err := d.repo.SetSequenceErrorStateByID(e.SequenceID, e.Err.Reason()); err != nil {
+				if err := d.repo.SetSequenceErrorStateByID(e.SequenceID, e.Err.Reason(), e.Err.(worker.ErrorWithReasonAndCode).ErrorCode()); err != nil {
 					d.logger.Error("error occured while setting sequence error state", zap.Error(err))
 					return err
 				}
