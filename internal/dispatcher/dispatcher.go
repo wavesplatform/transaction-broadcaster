@@ -152,7 +152,7 @@ func (d *dispatcherImpl) RunLoop() error {
 			}
 		default:
 			d.logger.Debug("getting new sequences")
-			newSequenceIds, err := d.repo.GetNewSequenceIds(d.sequenceTTL)
+			newSequenceIds, err := d.repo.GetNewSequenceIds()
 			if err != nil {
 				d.logger.Error("error occured while getting new sequences ids", zap.Error(err))
 				return err
