@@ -1,8 +1,6 @@
 # BUILD
 FROM golang:1.14-alpine as build
 
-ARG SERVICE=broadcaster
-
 ENV GO111MODULE=on
 
 WORKDIR /build
@@ -12,6 +10,8 @@ RUN go mod download
 
 COPY . .
 
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/service cmd/$SERVICE/main.go
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/service cmd/$SERVICE/main.go
 

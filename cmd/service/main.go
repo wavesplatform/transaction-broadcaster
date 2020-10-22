@@ -9,7 +9,6 @@ import (
 
 	"github.com/wavesplatform/transaction-broadcaster/internal/api"
 	"github.com/wavesplatform/transaction-broadcaster/internal/config"
-	"github.com/wavesplatform/transaction-broadcaster/internal/dispatcher"
 	"github.com/wavesplatform/transaction-broadcaster/internal/log"
 	"github.com/wavesplatform/transaction-broadcaster/internal/node"
 	"github.com/wavesplatform/transaction-broadcaster/internal/repository"
@@ -37,20 +36,9 @@ func main() {
 
 	repo := repository.New(db)
 
-	sequenceChan := make(chan int64)
-
 	nodeInteractor := node.New(cfg.Node.NodeURL, cfg.Node.NodeAPIKey, cfg.Node.WaitForTxStatusDelay, cfg.Node.WaitForTxTimeout, cfg.Node.WaitForNextHeightDelay)
 
-	disp := dispatcher.New(repo, nodeInteractor, sequenceChan, cfg.Dispatcher.LoopDelay, cfg.Dispatcher.SequenceTTL, cfg.Worker.TxOutdateTime, cfg.Worker.TxProcessingTTL, cfg.Worker.HeightsAfterLastTx, cfg.Worker.WaitForNextHeightDelay)
-
-	go func() {
-		if err := disp.RunLoop(); err != nil {
-			panic(err)
-		}
-	}()
-	logger.Info("dispatcher started")
-
-	s := api.New(repo, nodeInteractor, sequenceChan)
+	s := api.New(repo, nodeInteractor)
 	addr := fmt.Sprintf(":%d", cfg.Port)
 
 	logger.Info("starting REST API server", zap.Int("port", cfg.Port))
