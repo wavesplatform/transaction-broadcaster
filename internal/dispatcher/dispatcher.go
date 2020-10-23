@@ -32,13 +32,13 @@ type workerParams struct {
 }
 
 type dispatcherImpl struct {
-	repo                                repository.Repository
-	nodeInteractor                      node.Interactor
-	logger                              *zap.Logger
-	sequenceChan, completedSequenceChan chan int64
-	errorsChan                          chan workerError
-	loopDelay                           time.Duration
-	sequenceTTL                         time.Duration
+	repo                  repository.Repository
+	nodeInteractor        node.Interactor
+	logger                *zap.Logger
+	completedSequenceChan chan int64
+	errorsChan            chan workerError
+	loopDelay             time.Duration
+	sequenceTTL           time.Duration
 
 	worker workerParams
 
@@ -48,7 +48,7 @@ type dispatcherImpl struct {
 }
 
 // New returns instance of Dispatcher interface implementation
-func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan int64, loopDelay, sequenceTTL int64, txOutdatedTime, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
+func New(repo repository.Repository, nodeInteractor node.Interactor, loopDelay, sequenceTTL int64, txOutdatedTime, txProcessingTTL, heightsAfterLastTx, waitForNextHeightDelay int32) Dispatcher {
 	logger := log.Logger.Named("dispatcher")
 
 	completedSequenceChan := make(chan int64)
@@ -58,7 +58,6 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 		repo:                  repo,
 		nodeInteractor:        nodeInteractor,
 		logger:                logger,
-		sequenceChan:          sequenceChan,
 		completedSequenceChan: completedSequenceChan,
 		errorsChan:            errorsChan,
 		loopDelay:             time.Duration(loopDelay) * time.Millisecond,
@@ -83,14 +82,6 @@ func (d *dispatcherImpl) RunLoop() error {
 
 	for {
 		select {
-		case seqID := <-d.sequenceChan:
-			d.logger.Debug("got new sequence", zap.Int64("sequence_id", seqID))
-
-			if err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
-				d.logger.Error("error occured while setting sequence processing state", zap.Error(err))
-				return err
-			}
-			d.runWorker(seqID)
 		case e := <-d.errorsChan:
 			d.logger.Debug("got new error", zap.Error(e.Err), zap.Int64("sequence_id", e.SequenceID))
 
@@ -160,7 +151,27 @@ func (d *dispatcherImpl) RunLoop() error {
 				}
 			}
 		default:
-			// nothing to do, just wait for the next message
+			d.logger.Debug("getting new sequences")
+			newSequenceIds, err := d.repo.GetNewSequenceIds()
+			if err != nil {
+				d.logger.Error("error occured while getting new sequences ids", zap.Error(err))
+				return err
+			}
+
+			if len(newSequenceIds) > 0 {
+				d.logger.Debug("processing new sequences", zap.Int("count", len(newSequenceIds)), zap.Int64s("new_sequence_ids", newSequenceIds))
+
+				for _, seqID := range newSequenceIds {
+					// refresh sequence status
+					if err := d.repo.SetSequenceStateByID(seqID, repository.StateProcessing); err != nil {
+						d.logger.Error("error occurred while updating sequence state", zap.Error(err), zap.Int64("sequence_id", seqID))
+						return err
+					}
+
+					d.runWorker(seqID)
+				}
+			}
+			time.Sleep(d.loopDelay)
 		}
 	}
 }

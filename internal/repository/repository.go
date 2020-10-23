@@ -163,6 +163,7 @@ type Repository interface {
 	GetSequenceByID(id int64) (*Sequence, error)
 	GetSequenceTxsByID(sequenceID int64) ([]*SequenceTx, error)
 	GetSequenceTx(sequenceID int64, positionInSequence int16) (*SequenceTx, error)
+	GetNewSequenceIds() ([]int64, error)
 	GetHangingSequenceIds(ttl time.Duration, excluding []int64) ([]int64, error)
 	CreateSequence(txs []string) (int64, error)
 	SetSequenceStateByID(sequenceID int64, newState State) error
@@ -217,6 +218,20 @@ func (r *repoImpl) GetSequenceTx(sequenceID int64, positionInSequence int16) (*S
 	}
 
 	return &tx, nil
+}
+
+// GetNewSequenceIds tries to new sequences ids
+func (r *repoImpl) GetNewSequenceIds() ([]int64, error) {
+	var ids []int64
+
+	var err error
+	_, err = r.Conn.Query(&ids, "select s.id from sequences s where s.state=?0 order by s.id asc", StatePending)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return ids, nil
 }
 
 // GetHangingSequenceIds tries to get hanging sequence ids
