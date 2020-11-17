@@ -15,6 +15,7 @@ type PgConfig struct {
 	Database string `env:"PGDATABASE,required"`
 	User     string `env:"PGUSER,required"`
 	Password string `env:"PGPASSWORD,required"`
+	PoolSize int    `env:"PGPOOLSIZE" envDefault:"4"`
 }
 
 type ErrorInfo struct {

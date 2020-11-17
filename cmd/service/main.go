@@ -32,6 +32,7 @@ func main() {
 		User:     cfg.Pg.User,
 		Database: cfg.Pg.Database,
 		Password: cfg.Pg.Password,
+		PoolSize: cfg.Pg.PoolSize,
 	})
 
 	repo := repository.New(db)
