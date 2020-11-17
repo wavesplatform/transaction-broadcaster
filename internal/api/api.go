@@ -56,7 +56,7 @@ func createErrorRenderer(logger *zap.Logger) errorRenderer {
 }
 
 // New ...
-func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan<- int64) *gin.Engine {
+func New(repo repository.Repository, nodeInteractor node.Interactor) *gin.Engine {
 	logger := log.Logger.Named("server.requestHandler")
 
 	renderError := createErrorRenderer(logger)
@@ -67,7 +67,7 @@ func New(repo repository.Repository, nodeInteractor node.Interactor, sequenceCha
 
 	r.Use(gin.Recovery(), accessLog(logger))
 
-	r.GET("/sequences/:id", getSequence(logger, renderError, repo)).POST("/sequences", createSequence(logger, renderError, repo, nodeInteractor, sequenceChan))
+	r.GET("/sequences/:id", getSequence(logger, renderError, repo)).POST("/sequences", createSequence(logger, renderError, repo, nodeInteractor))
 
 	return r
 }

@@ -49,7 +49,7 @@ func getSequence(logger *zap.Logger, renderError errorRenderer, repo repository.
 	}
 }
 
-func createSequence(logger *zap.Logger, renderError errorRenderer, repo repository.Repository, nodeInteractor node.Interactor, sequenceChan chan<- int64) func(*gin.Context) {
+func createSequence(logger *zap.Logger, renderError errorRenderer, repo repository.Repository, nodeInteractor node.Interactor) func(*gin.Context) {
 	return func(c *gin.Context) {
 		// retrieve transactions from post request body
 		buf := bytes.Buffer{}
@@ -112,8 +112,6 @@ func createSequence(logger *zap.Logger, renderError errorRenderer, repo reposito
 			})
 			return
 		}
-
-		sequenceChan <- sequenceID
 
 		c.JSON(http.StatusCreated, gin.H{
 			"id": sequenceID,
