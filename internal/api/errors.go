@@ -12,8 +12,8 @@ const (
 	_invalidParameterValue    = 950201
 
 	// service errors
-	_txsDuplicatesError  = 950301
-	_invalidFirstTxError = 950302
+	_txsDuplicatesError  = 951001
+	_invalidFirstTxError = 951002
 )
 
 type errorDetails map[string]interface{}
